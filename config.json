@@ -1,11 +1,11 @@
 {
   "guild_name": "Don't Be Suspicious",
-  "guild_subtitle": "DKP SR Dashboard",
-  "page_title": "DBS DKP SR",
+  "guild_subtitle": "WoW Forever \u2014 Soft Reserves",
+  "page_title": "DBS WF",
   "cf_worker_url": "https://dbs-lc.steelead24.workers.dev",
   "kv_prefix": "wf/",
   "apps_script": "https://script.google.com/macros/s/AKfycbz4PHAAzCBbp7uuprvoeQKhCJGrmjT9Zgszw-EymFI-8vT-fjGgMSdfCzsF2Nt0Gk1A/exec",
   "enable_apps_script": true,
   "wowhead_branch": "classic",
-  "sr": { "per_raid": 1, "starting": 0 }
+  "wowhead_data_env": 4
 }
