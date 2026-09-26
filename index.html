@@ -1556,6 +1556,18 @@
   .raid-acc > summary .acc-date::before { content: '▸ '; color: var(--gold-dim); font-size: 10px; }
   .raid-acc[open] > summary .acc-date::before { content: '▾ '; }
   details.raid-acc > summary span:first-child, details.raid-acc[open] > summary span:first-child { transform: none !important; display: inline; }
+  .dd-res { font-family: 'Cinzel', serif; font-size: 11px; color: #f0a0a0; }
+  .loot-item-dropdown { max-height: 380px; }
+  .loot-item-option.selected { background: rgba(var(--accent-rgb), 0.1); }
+
+  /* Compact player table (Loot tab "everyone else") */
+  .compact-table td, .compact-table th { padding: 7px 6px; }
+  .compact-table .att-bar-bg { width: 44px; }
+  .compact-table .att-pct { min-width: 44px; font-size: 13px; }
+  .compact-table .raid-dots { gap: 3px; }
+  .compact-table .player-name { max-width: 22ch; }
+  .compact-table .role-icon { display: none; }
+  .compact-table th { letter-spacing: 0.12em; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -3647,10 +3659,48 @@ function rosterPlayer(key) { return rosterData.players.find(p => normalizeName(p
 // Softres: effective reserves = synced snapshot with manual edits laid over it.
 // edits[charKey] = { name, items:[wowheadIds] } replaces that character's list
 // (an empty list removes them); characters only in edits are manual additions.
+// ── Name matching ─────────────────────────────────────────────
+// WoW Forever names are "First Last". Softres (and CLA) names may be the first name,
+// the last name, or both — accent-insensitive. We match the full name first, then a
+// first or last name that belongs to exactly one raider. Ambiguous or unknown names
+// stay unmatched (and are flagged) rather than being guessed.
+let _nameIndex = null;
+function _buildNameIndex() {
+  const full = new Map(), part = new Map();
+  for (const p of rosterData.players) {
+    const k = normalizeName(p.name);
+    full.set(k, k);
+    for (const w of String(p.name).split(/\s+/).filter(Boolean)) {
+      const wk = normalizeName(w); if (!wk || wk === k) continue;
+      if (!part.has(wk)) part.set(wk, new Set());
+      part.get(wk).add(k);
+    }
+  }
+  return { full, part, memo: new Map() };
+}
+function resolveRosterKey(name) {
+  _nameIndex ||= _buildNameIndex();
+  const nk = normalizeName(name);
+  if (_nameIndex.memo.has(nk)) return _nameIndex.memo.get(nk);
+  let res = _nameIndex.full.get(nk) || null;
+  if (!res) {
+    // Try the whole string as one part, then each word of it
+    const cands = new Set();
+    for (const w of [name, ...String(name).split(/\s+/)]) {
+      const hit = _nameIndex.part.get(normalizeName(w));
+      if (hit && hit.size === 1) cands.add([...hit][0]);
+    }
+    res = cands.size === 1 ? [...cands][0] : nk; // unmatched → its own key (flagged as not on roster)
+  }
+  _nameIndex.memo.set(nk, res);
+  return res;
+}
+
 function effectiveReserves(sheet) {
   const out = {};
   for (const r of sheet.reserves || []) {
-    const k = normalizeName(r.name);
+    const k = resolveRosterKey(r.name);
+    if (out[k]) { out[k].items.push(...(r.items || [])); out[k].synced.push(...(r.items || [])); continue; } // "Kael" + "Kael Brightblade"
     out[k] = { key: k, name: r.name, items: [...(r.items || [])], spec: r.spec, edited: false, synced: [...(r.items || [])] };
   }
   for (const [k, e] of Object.entries(sheet.edits || {})) {
@@ -3688,8 +3738,9 @@ function reserveLimitOf(raid) {
 // ═════════════════════════════════════════════════════════════════════════════
 function raidClaSet(raid) {
   const live = raid.claLabel ? claPlayersByLabel[raid.claLabel] : null;
-  if (live && live.size) return live;
-  return raid.attendance.cla.length ? new Set(raid.attendance.cla) : null;
+  const src = live && live.size ? [...live] : raid.attendance.cla;
+  if (!src.length) return null;
+  return new Set(src.map(k => resolveRosterKey(canonicalNames[k] || k))); // CLA names may be first or last name only
 }
 
 function isActiveRaiderFor(key, raid) {
@@ -3734,7 +3785,7 @@ function attendanceOf(raid, key) {
 //   Manual adjustments apply on their date (before that day's raid) and floor at 0.
 // ═════════════════════════════════════════════════════════════════════════════
 let _derived = null;
-function invalidateDerived() { _derived = null; _attMemo.clear(); }
+function invalidateDerived() { _derived = null; _attMemo.clear(); _nameIndex = null; }
 
 function buffScoreFor(playerName, date) {
   const v = rawBuffScoresByDate(playerName)[date];
@@ -4030,7 +4081,9 @@ function refreshAll() {
 // Attendance % over PAST raids. Missing an optional raid doesn't count against you;
 // attending one does count for you.
 function buildRenderData() {
-  const raids = pastRaids();
+  // Optional raids are left out of the overview entirely (no dot, not in #, not in %).
+  // They still count for SRs and streaks — see the SR ledger.
+  const raids = pastRaids().filter(r => !r.optional);
   const dates = raids.map(r => r.label);
   const n = raids.length;
   const roleMap = {};
@@ -4077,7 +4130,7 @@ function buffDotHtml(playerName, date, label) {
   const v = rawBuffScoresByDate(playerName)[date];
   if (v === undefined) return `<div class="raid-dot present" title="${label}: Present"></div>`;
   const pct = Math.round(v), col = buffColor(pct);
-  const tip = `${label}: Present | Buffs ${pct}%${srRules.buff.enabled ? (pct >= srRules.buff.threshold ? ' — earned the buff SR' : ` — below ${srRules.buff.threshold}%`) : ''}`;
+  const tip = `${label}: Present | Consumes ${pct}%${srRules.buff.enabled ? (pct >= srRules.buff.threshold ? ' — earned the buff SR' : ` — below ${srRules.buff.threshold}%`) : ''}`;
   if (pct >= 100) return `<span class="raid-star" style="color:${C1};" title="${tip}">★</span>`;
   return `<div class="raid-dot present" style="background:${col};border-color:${col};" title="${tip}"></div>`;
 }
@@ -4151,8 +4204,8 @@ function srCellHtml(playerName) {
   const adj = s.events.reduce((a, e) => a + (e.type === 'adjust' ? e.applied : 0), 0);
   lines.push(`Earned ${earned} · spent ${spent}${adj ? ` · adjusted ${adj > 0 ? '+' : ''}${adj}` : ''}`);
   if (srRules.streak.enabled) lines.push(`Streak: ${s.streak} raid${s.streak === 1 ? '' : 's'} — next bonus in ${s.nextStreakIn}`);
-  if (s.activeOver.length) lines.push(`⚠ Over-reserved on ${s.activeOver.map(e => e.name).join(', ')}`);
-  const over = s.activeOver.length > 0;
+  if (s.activeOver.length && writeToken) lines.push(`⚠ Over-reserved on ${s.activeOver.map(e => e.name).join(', ')}`);
+  const over = s.activeOver.length > 0 && !!writeToken; // over-reservation flags are officer-only
   const col = over ? C5 : s.available <= 0 ? 'var(--text-dim)' : 'var(--gold-light)';
   return `<span class="priority-score${over ? ' sr-over' : ''}" style="color:${col};" title="${escHtml(lines.join('\n')).replace(/\n/g, '&#10;')}">${over ? '⚠ ' : ''}${s.available}</span>`;
 }
@@ -4187,12 +4240,14 @@ function playerRowHtml(p, raids, opts = {}) {
 }
 
 function tableColgroup(withAction, withCurrent) {
-  return `<colgroup><col style="width:27ch;min-width:20ch;">${withCurrent ? '<col style="width:24ch;">' : ''}<col style="width:24px;"><col style="width:86px;"><col style="width:64px;"><col><col style="width:50px;"><col style="width:130px;">${withAction ? '<col style="width:120px;">' : ''}</colgroup>`;
+  if (withAction) // compact variant for the Loot tab (has Current + Award columns)
+    return `<colgroup><col style="width:22ch;">${withCurrent ? '<col style="width:20ch;">' : ''}<col style="width:20px;"><col style="width:72px;"><col style="width:72px;"><col><col style="width:36px;"><col style="width:100px;"><col style="width:74px;"></colgroup>`;
+  return `<colgroup><col style="width:27ch;min-width:20ch;"><col style="width:24px;"><col style="width:86px;"><col style="width:76px;"><col><col style="width:50px;"><col style="width:130px;"></colgroup>`;
 }
 function tableHeadHtml(th, withAction, withCurrent) {
   return `<tr>${th('Player', 'player', 'left')}${withCurrent ? '<th style="text-align:left;" title="Currently equipped in this slot, from the most recent CLA gear listing">Current</th>' : ''}<th></th>
-    ${th('SRs Available', 'srs', 'center', 'Soft reserves this raider can spend right now (active raids included). Hover a value for the breakdown.')}
-    ${th('Buffs', 'consumes', 'center', 'Uptime of all required consumables.')}
+    ${th('SR Balance', 'srs', 'center', 'Soft reserves this raider can spend right now (active raids included). Hover a value for the breakdown.')}
+    ${th('Consumes', 'consumes', 'center', 'CLA consumable score. Green = at or above the buff-bonus threshold.')}
     <th style="text-align:center;" title="Last 10 past raids. Colour = consumable usage.">Raids</th>
     ${th('#', 'attendance')}${th('Attendance %', 'pct')}${withAction ? '<th></th>' : ''}</tr>`;
 }
@@ -4238,7 +4293,7 @@ function render(data) {
     <div class="summary-item"><label>Active Raiders</label><div class="val">${allActive.length}</div></div>
     <div class="summary-item"><label>Avg Attendance</label><div class="val">${avgPct.toFixed(1)}%</div></div>
     <div class="summary-item"><label>Avg Consumes</label><div class="val">${wT ? (wS / wT).toFixed(1) + '%' : '—'}</div></div>
-    <div class="summary-item"><label>SRs Available</label><div class="val">${totalSr}</div></div>
+    <div class="summary-item"><label>SR Balance</label><div class="val">${totalSr}</div></div>
   </div>`;
   out.innerHTML = html;
   refreshWowhead();
@@ -4590,10 +4645,10 @@ function renderRaidDetail(panel, raid) {
         <label class="chk"><input type="checkbox" id="erOptional" ${raid.optional ? 'checked' : ''}> Optional</label>
         <button class="small-gold-btn" onclick="saveRaidMeta('${raid.id}')">SAVE</button>
         <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Cancel</button></div>` : ''}
-      ${overs.length ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
+      ${overs.length && writeToken ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
         ${raid.status === 'active' ? '' : '<span style="opacity:0.8;"> — raid ended; the excess was forgiven (balances never go below 0).</span>'}</div>` : ''}
-      ${unknown.length ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until added (Roster, or rename on softres).</div>` : ''}
+      ${unknown.length && writeToken ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until added (Roster, or rename on softres).</div>` : ''}
       <div class="sub-tabs">${tabs.map(([k, l]) => `<button class="sub-tab ${sub === k ? 'on' : ''}" onclick="setRaidSub('${k}')">${l}${k === 'reserves' ? ` <span class="count">${Object.keys(raidReserves(raid)).length}</span>` : k === 'loot' ? ` <span class="count">${raid.loot.length}</span>` : ''}</button>`).join('')}</div>
     </div>
     <div id="raidSub"></div>`;
@@ -4673,11 +4728,14 @@ function renderRaidLoot(el, raid) {
         <select class="loot-select" onchange="_raidView.raid=this.value;_raidView.boss='';_raidView.item='';renderRaidsPanel()">${opt(instances, v.raid)}</select></div>
       <div class="loot-select-group"><label class="loot-select-label">Boss</label>
         <select class="loot-select" onchange="_raidView.boss=this.value;_raidView.item='';renderRaidsPanel()">${opt(bosses, v.boss)}</select></div>
-      <div class="loot-select-group" style="flex:2;"><label class="loot-select-label">Item <span style="text-transform:none;letter-spacing:0;">— ★ = reserved this raid</span></label>
-        <select class="loot-select" onchange="_raidView.item=this.value;_urlSetParam('item',this.value);renderRaidsPanel()">
-          <option value="">— Select item —</option>
-          ${items.map(k => `<option value="${k}" ${k === v.item ? 'selected' : ''}>${reservedKeys.has(k) ? '★ ' : ''}${escHtml(itemName(k))}</option>`).join('')}
-        </select></div>
+      <div class="loot-select-group" style="flex:2;position:relative;"><label class="loot-select-label">Item <span style="text-transform:none;letter-spacing:0;">— ★ = reserved this raid</span></label>
+        <div class="loot-select loot-item-display" onclick="toggleLootItemDd(event)" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">
+          ${v.item ? `${itemIconSmall(v.item)}<span>${escHtml(itemName(v.item))}</span>` : '<span style="color:var(--text-dim);">— Select item —</span>'}
+        </div>
+        <div id="lootItemDd" class="loot-item-dropdown" style="display:none;">
+          ${items.map(k => { const n = reserveCountFor(res, k); return `<div class="loot-item-option ${k === v.item ? 'selected' : ''}" onclick="pickLootItem('${k}')">
+            ${itemIconSmall(k)}<span style="flex:1;">${escHtml(itemName(k))}</span>${n ? `<span class="dd-res" title="${n} reserve${n === 1 ? '' : 's'} this raid">★ ${n}</span>` : ''}</div>`; }).join('')}
+        </div></div>
     </div>` : `<p class="gl-empty">The Item Glossary is empty. Add a softres link on the Reserves tab (it imports the instance's items) or add items under Management → Item Glossary.</p>`}
     <div id="lootItemView"></div>
     <div class="section-title" style="margin-top:28px;">Loot this raid <span style="color:var(--text-dim);font-size:12px;letter-spacing:0.05em;">${raid.loot.length}</span></div>
@@ -4685,6 +4743,16 @@ function renderRaidLoot(el, raid) {
   if (v.item) renderLootItemView(document.getElementById('lootItemView'), raid, v.item);
   renderRaidLootLog(document.getElementById('raidLootLog'), raid);
 }
+
+function itemIconSmall(key) {
+  const id = itemWowheadId(key), ic = id && itemIcons[id];
+  return ic ? `<img src="https://wow.zamimg.com/images/wow/icons/small/${ic}.jpg" style="width:18px;height:18px;border:1px solid #444;border-radius:2px;flex-shrink:0;" />`
+            : '<span style="width:18px;height:18px;display:inline-block;flex-shrink:0;border:1px solid var(--border);border-radius:2px;"></span>';
+}
+function reserveCountFor(res, key) { return Object.values(res).reduce((a, m) => a + (m[key] || 0), 0); }
+function toggleLootItemDd(e) { e.stopPropagation(); const d = document.getElementById('lootItemDd'); if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none'; }
+function pickLootItem(k) { _raidView.item = k; _urlSetParam('item', k); renderRaidsPanel(); }
+document.addEventListener('click', e => { if (!e.target.closest('#lootItemDd')) { const d = document.getElementById('lootItemDd'); if (d) d.style.display = 'none'; } });
 
 function renderLootItemView(el, raid, itemKey) {
   const it = getItem(itemKey) || { name: itemName(itemKey), eligibleClasses: [] };
@@ -4714,11 +4782,11 @@ function renderLootItemView(el, raid, itemKey) {
     srHtml = `<div class="sr-box ${gearSlots ? 'with-cur' : ''}">
       <div class="gl-col-title">Soft reserved by ${reservers.length}</div>
       ${rows.map(r => `<div class="sr-row ${r.present ? '' : 'absent'} ${r.over ? 'over' : ''}">
-        <span class="sr-name">${playerNameHtml(r.name)}${r.rp ? '' : ' <span class="tag-warn">not on roster</span>'}</span>
+        <span class="sr-name">${playerNameHtml(r.name)}${r.rp || !writeToken ? '' : ' <span class="tag-warn">not on roster</span>'}</span>
         ${r.count > 1 ? `<span class="sr-multi" title="Reserved ${r.count} times — rolls ${r.count} times">×${r.count}</span>` : '<span></span>'}
         ${gearSlots ? `<span class="sr-cur">${currentGearHtml(r.name, gearSlots)}</span>` : ''}
         <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
-        <span class="sr-bal">${r.over ? `<span class="over-chip" title="Reserved ${r.ev.reserved} SRs this raid but only had ${r.ev.reserved - r.ev.over}">⚠ OVER-RESERVED ${r.ev.reserved}/${r.ev.reserved - r.ev.over}</span>` : ''}
+        <span class="sr-bal">${r.over && writeToken ? `<span class="over-chip" title="Reserved ${r.ev.reserved} SRs this raid but only had ${r.ev.reserved - r.ev.over}">⚠ OVER-RESERVED ${r.ev.reserved}/${r.ev.reserved - r.ev.over}</span>` : ''}
           ${!r.present ? '<span class="tag-warn">not marked present</span>' : ''}${r.got ? '<span class="tag-ok">✓ awarded</span>' : ''}</span>
         <span style="text-align:right;">${r.got ? '' : assignBtn(r.name, true)}</span>
       </div>`).join('')}
@@ -4743,7 +4811,7 @@ function renderLootItemView(el, raid, itemKey) {
     ${it.notes ? `<div style="font-size:13px;color:var(--text-dim);font-style:italic;margin-bottom:8px;">${escHtml(it.notes)}</div>` : ''}
     ${srHtml}
     <div class="gl-col-title" style="margin-top:18px;">Everyone else eligible & present <span style="color:var(--text-dim);">${others.length}</span></div>
-    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">${tableColgroup(true, !!gearSlots)}<thead>${tableHeadHtml(th, true, !!gearSlots)}</thead>
+    <div style="overflow-x:auto;"><table class="compact-table" style="width:100%;border-collapse:collapse;">${tableColgroup(true, !!gearSlots)}<thead>${tableHeadHtml(th, true, !!gearSlots)}</thead>
       <tbody>${others.map(p => playerRowHtml(p, lastRenderData.raids || [], { showRole: true, current: gearSlots ? currentGearHtml(p.name, gearSlots) : undefined, action: alreadyThisRaid.has(normalizeName(p.name)) ? '<span class="tag-ok">✓ awarded</span>' : assignBtn(p.name, false) })).join('')}</tbody>
     </table></div>`;
 }
@@ -4826,9 +4894,9 @@ function renderRaidReserves(el, raid) {
         const counts = {}; r.items.forEach(id => counts[id] = (counts[id] || 0) + 1);
         const ev = rp ? srStats(rp.name).events.find(e => e.raidId === raid.id) : null;
         return `<tr class="${ev?.over ? 'row-over' : ''}">
-          <td>${playerNameHtml(r.name)}${rp ? '' : ' <span class="tag-warn">not on roster</span>'}${r.edited ? ' <span class="tag-opt" title="Edited by hand — softres changes for this character are ignored until reverted">edited</span>' : ''}</td>
+          <td>${playerNameHtml(r.name)}${rp || !writeToken ? '' : ' <span class="tag-warn">not on roster</span>'}${r.edited ? ' <span class="tag-opt" title="Edited by hand — softres changes for this character are ignored until reverted">edited</span>' : ''}</td>
           <td><div class="loot-list">${Object.entries(counts).map(([id, c]) => `<span class="loot-item res-chip">${itemLinkHtml(itemKeyFor(+id))}${c > 1 ? ` <span class="sr-multi">×${c}</span>` : ''}<button class="x-btn write-gated-hide" onclick="editReserve('${raid.id}','${s.id}','${r.key}','remove',${id})" title="Remove one">✕</button></span>`).join('') || '<em class="no-loot">none</em>'}</div></td>
-          <td>${rp && ev ? `${ev.over ? `<span class="over-chip">⚠ ${ev.reserved}/${ev.reserved - ev.over}</span>` : `${ev.reserved} of ${ev.reserved + Math.max(0, ev.balance)}`}` : '—'}</td>
+          <td>${rp && ev ? `${ev.over && writeToken ? `<span class="over-chip">⚠ ${ev.reserved}/${ev.reserved - ev.over}</span>` : `${ev.reserved} of ${ev.reserved + Math.max(0, ev.balance)}`}` : '—'}</td>
           <td style="white-space:nowrap;text-align:right;" class="write-gated-hide">
             <button class="ghost-btn" onclick="addReservePrompt('${raid.id}','${s.id}','${r.key}')">+ item</button>
             ${r.edited ? `<button class="ghost-btn" onclick="editReserve('${raid.id}','${s.id}','${r.key}','revert')">Revert</button>` : ''}
@@ -4916,7 +4984,7 @@ async function addReserveManual(raidId, sheetId) {
 const ATT_SOURCE_LABEL = { manual: 'Manual', cla: 'CLA', assumed: 'Assumed (active)', softres: 'From reserves' };
 function renderRaidAttendance(el, raid) {
   const players = rosterData.players.filter(p => !rosterData.excluded?.includes(p.name))
-    .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.name.localeCompare(b.name));
+    .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name));
   const present = players.filter(p => attendanceOf(raid, normalizeName(p.name)).present).length;
   const basis = raidClaSet(raid) ? 'CLA' : raid.status === 'active' ? 'assumed: every active raider' : Object.keys(raid.attendance.overrides).length ? 'manual marks' : 'softres reserves';
   el.innerHTML = `<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px;flex-wrap:wrap;">
@@ -5053,7 +5121,7 @@ function renderRosterPanel() {
   const players = rosterData.players.filter(p => !rosterData.excluded?.includes(p.name))
     .filter(p => (!_rosterFilter.role || p.role === _rosterFilter.role) && (!_rosterFilter.cls || p.class === _rosterFilter.cls));
   const inactive = p => { const r = lastRenderData.roles.flatMap(x => x.players).find(x => x.name === p.name); return !!r?.inactive; };
-  players.sort((a, b) => (inactive(a) - inactive(b)) || ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.name.localeCompare(b.name));
+  players.sort((a, b) => (inactive(a) - inactive(b)) || ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name));
   const sel = 'background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px;';
   let rows = '', lastRole = null, inactiveShown = false;
   for (const p of players) {
@@ -5600,35 +5668,56 @@ async function generateDemoData({ overwrite = false } = {}) {
   const dates = []; for (let i = 7; i >= 0; i--) { const d = new Date(lastTue); d.setUTCDate(lastTue.getUTCDate() - i * 7); dates.push(d.toISOString().slice(0, 10)); }
 
   const raids = [], clSheets = [], parsed = {};
-  const budget = {};
+  const budget = {}, wants = {};
+  const bosses = DEMO_MC_INSTANCE.boss_order, bossItems = glossary.raids['Molten Core'];
+  const bossPool = cls => [...new Set(bosses.flatMap(b => bossItems[b] || []))].filter(k => { const e = glossary.items[k].eligibleClasses; return !e.length || e.includes(cls); });
+  const resolveDemoKey = n => players.map(p => normalizeName(p.name)).find(k => k === normalizeName(n)) || normalizeName(n);
+  // A few raiders all start out chasing Band of Accuria, so bad luck protection shows up
+  players.slice(0, 4).forEach(p => { wants[normalizeName(p.name)] = ['id:17063']; });
   dates.forEach((date, i) => {
     const optional = i === 5;
     const raid = normalizeRaid({ name: optional ? 'Molten Core (optional reclear)' : 'Molten Core', date, optional, status: 'past',
       createdAt: date + 'T01:00:00Z', endedAt: date + 'T06:00:00Z', softres: [], loot: [] });
     const present = players.filter((p, j) => i < stopAfter[j] && rnd() < (optional ? reliab[j] - 0.3 : reliab[j]));
     const presentKeys = present.map(p => normalizeName(p.name));
-    // Reserves: spend within a rough budget; a couple of no-shows reserve too
-    const reservers = [...present, ...players.filter(p => !present.includes(p)).slice(0, 1)];
+    // Reserves: each raider keeps reserving what they're chasing until they win it, and
+    // fills any spare reserve with something new their class can use. One no-show reserves too.
+    const reservers = [...present, ...players.filter(p => !present.includes(p) && i < stopAfter[players.indexOf(p)]).slice(0, 1)];
     const reserves = reservers.map(p => {
       const k = normalizeName(p.name);
       budget[k] = (budget[k] || 0) + (present.includes(p) ? 1 : 0);
-      const n = Math.max(1, Math.min(budget[k], rnd() < 0.3 ? 2 : 1));
-      const pool = forClass(p.class);
-      const items = [];
-      for (let x = 0; x < n; x++) items.push(+(x === 0 && rnd() < 0.35 ? pick(contested) : pick(pool)).slice(3));
-      if (present.includes(p)) budget[k] -= n;
+      const n = Math.max(1, Math.min(budget[k], 2));
+      const want = (wants[k] ||= []);
+      const pool = bossPool(p.class).filter(x => !want.includes(x));
+      while (want.length < n && pool.length) want.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+      const items = want.slice(0, n).map(x => +x.slice(3));
+      if (present.includes(p)) budget[k] -= items.length;
       return { name: softresName(p, players.indexOf(p) + i), spec: null, items, note: '' };
     });
     raid.softres.push({ id: _uid('s_'), code: 'DEMO' + (i + 1), url: '', demo: true, instances: [{ slug: 'mc', name: 'Molten Core' }], reserveLimit: 2,
       reserves, edits: {}, syncedAt: date + 'T02:00:00Z' });
-    // Loot: reserved items drop ~45% (contested items every other week); winner random among present reservers
-    const byItem = {};
-    for (const r of reserves) if (presentKeys.includes(normalizeName(r.name))) for (const id of new Set(r.items)) (byItem['id:' + id] ||= []).push(r.name);
-    for (const [ik, names] of Object.entries(byItem)) {
-      const drops = contested.includes(ik) ? i % 2 === 1 : rnd() < 0.45;
-      if (drops) raid.loot.push({ id: _uid('l_'), itemKey: ik, name: itemName(ik), recipient: pick(names), sr: true, at: date + 'T04:00:00Z' });
-    }
-    for (let x = 0; x < 3; x++) { const p = pick(present); const ik = pick(forClass(p.class)); raid.loot.push({ id: _uid('l_'), itemKey: ik, name: itemName(ik), recipient: p.name, sr: false, at: date + 'T04:30:00Z' }); }
+    // Loot: 2 items per boss, 3 from the last boss. A reserved item is favoured about half the time.
+    const reservedBy = {};
+    for (const r of reserves) { const rk = resolveDemoKey(r.name); if (presentKeys.includes(rk)) for (const id of new Set(r.items)) (reservedBy['id:' + id] ||= []).push(rk); }
+    bosses.forEach((boss, bi) => {
+      const table = [...(bossItems[boss] || [])];
+      const nDrops = bi === bosses.length - 1 ? 3 : 2;
+      for (let d = 0; d < nDrops && table.length; d++) {
+        const reservedHere = table.filter(x => reservedBy[x]);
+        const ik = reservedHere.length && rnd() < 0.5 ? pick(reservedHere) : pick(table);
+        table.splice(table.indexOf(ik), 1);
+        let winnerKey, sr;
+        if (reservedBy[ik]) { winnerKey = pick(reservedBy[ik]); sr = true; }
+        else {
+          const elig = present.filter(p => { const e = glossary.items[ik].eligibleClasses; return !e.length || e.includes(p.class); });
+          if (!elig.length) continue; // nobody can use it — sharded
+          winnerKey = normalizeName(pick(elig).name); sr = false;
+        }
+        const winner = players.find(p => normalizeName(p.name) === winnerKey);
+        raid.loot.push({ id: _uid('l_'), itemKey: ik, name: itemName(ik), recipient: winner.name, sr, at: date + 'T04:00:00Z' });
+        if (wants[winnerKey]) wants[winnerKey] = wants[winnerKey].filter(x => x !== ik); // won it — stop chasing
+      }
+    });
     // CLA (all but raid 7, which was ended without one → attendance from reserves)
     if (i !== 6) {
       raid.claLabel = date; raid.attendance.cla = presentKeys;
@@ -5644,9 +5733,12 @@ async function generateDemoData({ overwrite = false } = {}) {
   // Active raid today: two reserves each; Hexweaver over-reserves; Shiv double-reserves one item
   const act = normalizeRaid({ name: 'Molten Core', date: today, optional: false, status: 'active', createdAt: new Date().toISOString(), softres: [], loot: [] });
   const actRes = players.filter((_, j) => reliab[j] > 0.6 && j < nActive).map(p => {
-    const pool = forClass(p.class);
-    let items = [+pick(contested).slice(3), +pick(pool).slice(3)];
-    if (p === overReserver) for (let x = 0; x < 8; x++) items.push(+pick(pool).slice(3));
+    const k = normalizeName(p.name);
+    const want = (wants[k] ||= []);
+    const pool = bossPool(p.class).filter(x => !want.includes(x));
+    while (want.length < 2 && pool.length) want.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+    let items = want.slice(0, 2).map(x => +x.slice(3));
+    if (p === overReserver) for (let x = 0; x < 8; x++) items.push(+pick(bossPool(p.class)).slice(3));
     if (p === doubleReserver) items = [items[0], items[0]];
     return { name: softresName(p, players.indexOf(p) + 3), spec: null, items, note: '' };
   });
