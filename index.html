@@ -1556,7 +1556,11 @@
   .raid-acc > summary .acc-date::before { content: '▸ '; color: var(--gold-dim); font-size: 10px; }
   .raid-acc[open] > summary .acc-date::before { content: '▾ '; }
   details.raid-acc > summary span:first-child, details.raid-acc[open] > summary span:first-child { transform: none !important; display: inline; }
-  .dd-res { font-family: 'Cinzel', serif; font-size: 11px; color: #f0a0a0; }
+  /* Reserve count in the loot item dropdown: sits right after the name, easy to spot */
+  .dd-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-res { flex-shrink: 0; font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #fff; background: rgba(201,76,76,0.85); border: 1px solid #e07a7a; border-radius: 999px; padding: 1px 9px; box-shadow: 0 0 8px rgba(201,76,76,0.35); }
+  .loot-item-option.has-res { background: rgba(201,76,76,0.07); box-shadow: inset 3px 0 0 rgba(201,76,76,0.8); }
+  .loot-item-option.has-res:hover { background: rgba(201,76,76,0.14); }
   .loot-item-dropdown { max-height: 380px; }
   .loot-item-option.selected { background: rgba(var(--accent-rgb), 0.1); }
 
@@ -1670,6 +1674,12 @@
     .iv-list { max-height: 300px; }
     .iv-stats { grid-template-columns: repeat(2, 1fr); }
   }
+  .iv-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .iv-sort { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; font-family: 'Cinzel', serif; }
+  .iv-sort span { margin-right: 4px; }
+  .iv-sort button { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 999px; padding: 2px 10px; font-family: 'Crimson Pro', serif; font-size: 12px; letter-spacing: 0; text-transform: none; cursor: pointer; }
+  .iv-sort button.on { color: var(--gold-light); border-color: rgba(var(--accent-rgb), 0.55); background: rgba(var(--accent-rgb), 0.08); }
+  .iv-badge.sr { color: #f08080; border-color: rgba(201,76,76,0.45); }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -5016,11 +5026,11 @@ function renderRaidLoot(el, raid) {
         <select class="loot-select" onchange="_raidView.boss=this.value;_raidView.item='';renderRaidsPanel()">${opt(bosses, v.boss)}</select></div>
       <div class="loot-select-group" style="flex:2;position:relative;"><label class="loot-select-label">Item <span style="text-transform:none;letter-spacing:0;">— ★ = reserved this raid</span></label>
         <div class="loot-select loot-item-display" onclick="toggleLootItemDd(event)" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">
-          ${v.item ? `${itemIconSmall(v.item)}<span>${escHtml(itemName(v.item))}</span>` : '<span style="color:var(--text-dim);">— Select item —</span>'}
+          ${v.item ? `${itemIconSmall(v.item)}<span>${escHtml(itemName(v.item))}</span>${reserveCountFor(res, v.item) ? `<span class="dd-res">★ ${reserveCountFor(res, v.item)} SR${reserveCountFor(res, v.item) === 1 ? '' : 's'}</span>` : ''}` : '<span style="color:var(--text-dim);">— Select item —</span>'}
         </div>
         <div id="lootItemDd" class="loot-item-dropdown" style="display:none;">
-          ${items.map(k => { const n = reserveCountFor(res, k); return `<div class="loot-item-option ${k === v.item ? 'selected' : ''}" onclick="pickLootItem('${k}')">
-            ${itemIconSmall(k)}<span style="flex:1;">${escHtml(itemName(k))}</span>${n ? `<span class="dd-res" title="${n} reserve${n === 1 ? '' : 's'} this raid">★ ${n}</span>` : ''}</div>`; }).join('')}
+          ${items.map(k => { const n = reserveCountFor(res, k); return `<div class="loot-item-option ${k === v.item ? 'selected' : ''} ${n ? 'has-res' : ''}" onclick="pickLootItem('${k}')">
+            ${itemIconSmall(k)}<span class="dd-name">${escHtml(itemName(k))}</span>${n ? `<span class="dd-res" title="${n} reserve${n === 1 ? '' : 's'} this raid">★ ${n} SR${n === 1 ? '' : 's'}</span>` : ''}</div>`; }).join('')}
         </div></div>
     </div>` : building ? '' : `<p class="gl-empty">The Item Glossary is empty. Add a softres link on the Reserves tab (it imports the instance's items) or add items under Management → Item Glossary.</p>`}
     <div id="lootItemView"></div>
@@ -5879,6 +5889,7 @@ async function saveRulesFromForm() {
 // who reserved it each raid, what they rolled, and who it went to.
 // ═════════════════════════════════════════════════════════════════════════════
 let _iv = { raid: '', boss: '', item: '' };
+let _ivSort = 'srs'; // 'srs' (most reserved first) | 'table' (loot table order) | 'name'
 
 function ivSelect(level, v) {
   if (level === 'raid') _iv = { raid: v, boss: Object.keys(glossary.raids[v] || {})[0] || '', item: '' };
@@ -5931,12 +5942,16 @@ function renderItemsPanel() {
   if (!raids.includes(_iv.raid)) _iv = { raid: raids[0], boss: '', item: _iv.item };
   const bosses = Object.keys(glossary.raids[_iv.raid] || {});
   if (!bosses.includes(_iv.boss)) _iv.boss = bosses[0] || '';
-  const items = glossary.raids[_iv.raid]?.[_iv.boss] || [];
+  const bossItems = glossary.raids[_iv.raid]?.[_iv.boss] || [];
 
   // Badges for the item list: how many raiders hold BLP on it, and how often it's dropped
   const blpCount = {}, dropped = {};
   for (const m of Object.values(derived().blp.losses)) for (const [k, n] of Object.entries(m)) if (n > 0) blpCount[k] = (blpCount[k] || 0) + 1;
   for (const r of raidsData.raids) for (const l of r.loot) dropped[l.itemKey] = (dropped[l.itemKey] || 0) + 1;
+  const srCount = {}; // every SR ever placed on the item (double reserves count twice)
+  for (const r of raidsData.raids) for (const m of Object.values(raidReserves(r))) for (const [k, n] of Object.entries(m)) srCount[k] = (srCount[k] || 0) + n;
+  const items = _ivSort === 'table' ? bossItems
+    : [...bossItems].sort((a, b) => (_ivSort === 'srs' ? (srCount[b] || 0) - (srCount[a] || 0) : 0) || itemName(a).localeCompare(itemName(b)));
   const opt = (vals, cur) => vals.map(x => `<option value="${escHtml(x)}" ${x === cur ? 'selected' : ''}>${escHtml(x)}</option>`).join('');
 
   panel.innerHTML = `
@@ -5948,13 +5963,17 @@ function renderItemsPanel() {
         <select class="loot-select" onchange="ivSelect('boss', this.value)">${opt(bosses, _iv.boss)}</select></div>
     </div>
     <div class="iv-grid">
+      <div class="iv-col">
+      <div class="iv-sort"><span>Sort</span>${[['srs', 'Most reserved'], ['table', 'Loot table'], ['name', 'A–Z']].map(([v, l]) =>
+        `<button class="${_ivSort === v ? 'on' : ''}" onclick="_ivSort='${v}';renderItemsPanel()">${l}</button>`).join('')}</div>
       <div class="iv-list">${items.length ? items.map(k => {
         const it = glossary.items[k] || {};
         return `<div class="iv-row${k === _iv.item ? ' selected' : ''}" onclick="ivSelect('item','${jsAttr(k)}')">
           ${itemIconSmall(k)}<span class="iv-row-name">${escHtml(itemName(k))}${it.slot ? `<span class="iv-row-slot">${escHtml(it.slot)}</span>` : ''}</span>
           ${blpCount[k] ? `<span class="iv-badge blp" title="${blpCount[k]} raider${blpCount[k] === 1 ? ' has' : 's have'} bad luck protection on this item">▲ ${blpCount[k]}</span>` : ''}
+          ${srCount[k] ? `<span class="iv-badge sr" title="${srCount[k]} SR${srCount[k] === 1 ? '' : 's'} placed on this item">★ ${srCount[k]}</span>` : ''}
           ${dropped[k] ? `<span class="iv-badge" title="Dropped ${dropped[k]}×">${dropped[k]}×</span>` : ''}</div>`;
-      }).join('') : '<div class="gl-empty">No items for this boss.</div>'}</div>
+      }).join('') : '<div class="gl-empty">No items for this boss.</div>'}</div></div>
       <div class="iv-detail" id="ivDetail">${_iv.item ? itemDetailHtml(_iv.item) : '<p class="gl-empty">Pick an item to see its SR history and who has bad luck protection on it.</p>'}</div>
     </div>`;
 
