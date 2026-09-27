@@ -1477,7 +1477,7 @@
   .col-active { color: var(--gold-light); text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
   .raid-dot.absent.optional { border-style: dashed; opacity: 0.6; }
 
-  .rules { max-width: 760px; }
+  .rules { max-width: none; }
   .rules-intro { color: var(--text-dim); font-size: 15px; line-height: 1.55; }
   .rule { display: flex; align-items: center; gap: 18px; padding: 14px 0; border-top: 1px solid rgba(var(--line-rgb), 0.8); }
   .rule-text { flex: 1; display: flex; flex-direction: column; gap: 3px; }
@@ -1568,6 +1568,27 @@
   .compact-table .player-name { max-width: 22ch; }
   .compact-table .role-icon { display: none; }
   .compact-table th { letter-spacing: 0.12em; }
+
+  /* Guild Overview: fixed column plan (see tableColgroup) */
+  .ov-table { table-layout: fixed; }
+  .ov-table .player-name { max-width: none; }
+  .ov-table .raid-dots { justify-content: center; }
+  @media (max-width: 768px) { .ov-table { min-width: 760px; } }
+
+  /* Raider dropdown: bad luck protection chips */
+  .loot-item.blp-chip { border-color: rgba(var(--accent-rgb), 0.55); background: rgba(var(--accent-rgb), 0.07); cursor: help; }
+
+  /* Raid loot tab: build a new instance's loot table live */
+  .nc-card { margin-bottom: 18px; border-color: rgba(var(--accent-rgb), 0.35); }
+  .nc-hint { display: block; margin-top: 4px; font-family: 'Crimson Pro', serif; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--text-dim); }
+  .nc-grid { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+  .nc-field { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 4px; }
+  .nc-row { display: flex; gap: 6px; }
+  .nc-row .gl-input { flex: 1; min-width: 0; }
+  .nc-row input:disabled, .nc-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .ov-table th:not(:first-child), .ov-table td:not(:first-child) { text-align: center !important; }
+  .ov-table th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; padding-right: 4px; letter-spacing: 0.14em; }
+  .ov-table .att-cell { justify-content: center; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -3591,12 +3612,13 @@ function parseWowheadTooltip(html, name) {
   // further down, which would otherwise read as "Cloth"/"Shield".
   const cut = html.indexOf('</td></tr></table><table>');
   const head = cut > 0 ? html.slice(0, cut) : html;
-  const th = head.match(/<table width="100%"><tr><td>[^<]*<\/td><th>(.*?)<\/th>/);
-  const type = RECIPE_RE.test(name || '') ? '' : (th ? th[1].replace(/<[^>]+>/g, '').trim() : '');
+  const th = head.match(/<table width="100%"><tr><td>([^<]*)<\/td><th>(.*?)<\/th>/);
+  const type = RECIPE_RE.test(name || '') ? '' : (th ? th[2].replace(/<[^>]+>/g, '').trim() : '');
+  const slot = th ? th[1].trim() : '';
   const text = head.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   const cm = text.match(/Classes:\s*([A-Za-z ,]+?)(?=\s+(?:Requires|Equip:|Use:|Chance|Durability|Set:|\d)|$)/);
   const classes = cm ? cm[1].split(',').map(c => c.trim()).filter(c => CLASSES.includes(c)) : [];
-  return { type, classes };
+  return { type, classes, slot };
 }
 
 async function fetchWowheadItem(id) {
@@ -3607,7 +3629,7 @@ async function fetchWowheadItem(id) {
   if (!res.ok) throw new Error(`Wowhead ${id}: HTTP ${res.status}`);
   const j = await res.json();
   const parsed = parseWowheadTooltip(j.tooltip || '', j.name);
-  return { type: parsed.type, classes: parsed.classes, icon: j.icon || null };
+  return { type: parsed.type, classes: parsed.classes, slot: parsed.slot, icon: j.icon || null, name: j.name || '', quality: j.quality ?? null };
 }
 
 // Apply Wowhead facts to a glossary item. Returns true if anything changed.
@@ -3616,6 +3638,10 @@ function applyWowheadInfo(key, info) {
   const before = JSON.stringify(it);
   it.armorType = info.type || '';
   if (info.icon && !it.icon) it.icon = info.icon;
+  // Items added by Wowhead ID alone start as "Item 12345" — fill in the real name, slot and quality
+  if (info.name && (!it.name || /^Item \d+$/.test(it.name))) it.name = info.name;
+  if (info.slot && !it.slot) it.slot = info.slot;
+  if (info.quality != null && (it.quality == null || it.quality === '')) it.quality = info.quality;
   it.whCheckedAt = new Date().toISOString();
   if (it.classesSource !== 'manual' && !(it.srClasses || []).length) {
     const byType = TYPE_CLASSES[info.type] || null;
@@ -4242,14 +4268,18 @@ function playerRowHtml(p, raids, opts = {}) {
 function tableColgroup(withAction, withCurrent) {
   if (withAction) // compact variant for the Loot tab (has Current + Award columns)
     return `<colgroup><col style="width:22ch;">${withCurrent ? '<col style="width:20ch;">' : ''}<col style="width:20px;"><col style="width:72px;"><col style="width:72px;"><col><col style="width:36px;"><col style="width:100px;"><col style="width:74px;"></colgroup>`;
-  return `<colgroup><col style="width:27ch;min-width:20ch;"><col style="width:24px;"><col style="width:86px;"><col style="width:76px;"><col><col style="width:50px;"><col style="width:130px;"></colgroup>`;
+  // Guild Overview: the name column fits 25 characters plus the arrow; SR Balance, Consumes, # and
+  // Attendance % get equal shares and Raids takes what's left (about double) for the dots.
+  // Needs table-layout: fixed — .ov-table.
+  const one = '<col style="width:11.5%;">';
+  return `<colgroup><col style="width:calc(28ch + 24px);"><col style="width:32px;">${one}${one}<col>${one}${one}</colgroup>`;
 }
 function tableHeadHtml(th, withAction, withCurrent) {
   return `<tr>${th('Player', 'player', 'left')}${withCurrent ? '<th style="text-align:left;" title="Currently equipped in this slot, from the most recent CLA gear listing">Current</th>' : ''}<th></th>
     ${th('SR Balance', 'srs', 'center', 'Soft reserves this raider can spend right now (active raids included). Hover a value for the breakdown.')}
     ${th('Consumes', 'consumes', 'center', 'CLA consumable score. Green = at or above the buff-bonus threshold.')}
     <th style="text-align:center;" title="Last 10 past raids. Colour = consumable usage.">Raids</th>
-    ${th('#', 'attendance')}${th('Attendance %', 'pct')}${withAction ? '<th></th>' : ''}</tr>`;
+    ${th('#', 'attendance')}${th('Attendance', 'pct')}${withAction ? '<th></th>' : ''}</tr>`;
 }
 
 function render(data) {
@@ -4285,7 +4315,7 @@ function render(data) {
         <div class="role-line"></div>
         <span class="role-count">${sorted.filter(p => p.pct !== null && !p.inactive).length} active <span class="role-toggle" id="roletoggle-${safe}">▾</span></span>
       </div>
-      <div class="role-body" id="rolebody-${safe}"><table>${tableColgroup()}<thead>${tableHeadHtml(th)}</thead>
+      <div class="role-body" id="rolebody-${safe}"><table class="ov-table">${tableColgroup()}<thead>${tableHeadHtml(th)}</thead>
       <tbody>${sorted.map(p => playerRowHtml(p, raids)).join('')}</tbody></table></div></div>`;
   }
   html += `<div class="summary">
@@ -4341,17 +4371,25 @@ function raiderRaidListHtml(key, s, hist, loot) {
   return `<div class="raid-acc-list">${rows.map(e => {
     if (e.type === 'adjust') return `<div class="raid-acc adj"><span class="acc-date">${e.date ? fmtShort(e.date) : ''}</span>
       <span class="acc-name">Adjustment <span style="color:var(--text-dim);">— ${escHtml(e.note || '')}</span></span>
-      <span class="acc-sum"><span style="color:${e.applied >= 0 ? C1 : C5};">${e.applied > 0 ? '+' : ''}${e.applied}</span>${e.applied !== e.delta ? ` <span style="color:var(--text-dim);">(of ${e.delta}, floored at 0)</span>` : ''} · bal ${e.balance}</span></div>`;
+      <span class="acc-sum"><span style="color:${e.applied >= 0 ? C1 : C5};">${e.applied > 0 ? '+' : ''}${e.applied}</span>${e.applied !== e.delta ? ` <span style="color:var(--text-dim);">(of ${e.delta}, floored at 0)</span>` : ''}</span></div>`;
     const earned = e.base + e.streakBonus + e.buffBonus;
     const res = histByRaid[e.raidId] || [], won = lootByRaid[e.raidId] || [];
     const results = res.map(x => x.outcome);
     const icons = [results.includes('won') ? '<span title="Won an SR item" style="color:' + C1 + ';">✓</span>' : '',
                    results.includes('lost') ? '<span title="Lost an SR roll" style="color:' + C5 + ';">✗</span>' : ''].join('');
-    const summary = `${e.present ? `+${earned}` : '<span style="color:var(--text-dim);">absent</span>'}${e.spent ? ` · −${e.spent}` : ''}${e.over ? ` <span style="color:${C5};">(${e.over} over)</span>` : ''} · bal <b style="${e.balance < 0 ? 'color:' + C5 : ''}">${e.balance}</b>${won.length ? ` · ${won.length} loot` : ''} ${icons}`;
+    const parts = [];
+    if (e.present) parts.push(`<span style="color:${C1};">+${earned} SR${earned === 1 ? '' : 's'}</span>`);
+    else parts.push('<span style="color:var(--text-dim);">absent</span>');
+    if (e.spent) parts.push(`${e.spent} spent`);
+    if (e.over) parts.push(`<span style="color:${C5};">${e.over} over</span>`);
+    if (won.length) parts.push(`${won.length} loot`);
+    const summary = parts.join(' · ') + (icons ? ' ' + icons : '');
     const detail = `
       <div class="acc-body">
         <div class="acc-line"><span class="acc-k">SRs earned</span><span>${e.present
-          ? `+${e.base} attendance${e.streakBonus ? ` · <span class="bonus">+1 streak</span> (raid ${e.streak} in a row)` : ` · streak ${e.streak}`}${e.buffBonus ? ` · <span class="bonus">+1 buffs</span> (${e.buffScore}%)` : e.buffScore !== null ? ` · buffs ${e.buffScore}% (below ${srRules.buff.threshold}%)` : e.status === 'active' ? ' · buff bonus pending CLA' : ''}`
+          ? `+${e.base + e.buffBonus} attendance${e.buffBonus ? ' <span class="bonus">(with consumes)</span>'
+              : srRules.buff.enabled && e.buffScore !== null ? ` <span style="color:var(--text-dim);">(consumes ${e.buffScore}%, bonus needs ${srRules.buff.threshold}%)</span>`
+              : srRules.buff.enabled && e.status === 'active' ? ' <span style="color:var(--text-dim);">(consumes bonus once the CLA is in)</span>' : ''}${e.streakBonus ? ` · <span class="bonus">+${e.streakBonus} streak</span> (${e.streak} raids in a row)` : ''}`
           : 'none — not present'} <span style="color:var(--text-dim);font-size:12px;">(${ATT_SOURCE_LABEL[e.source] || e.source})</span></span></div>
         <div class="acc-line"><span class="acc-k">SRs used</span><span>${e.reserved ? `${e.reserved}${e.present ? '' : ' (not charged — absent)'}${e.over ? ` · <span style="color:${C5};">${e.status === 'active' ? `${e.over} more than available` : `${e.over} forgiven (balance can't go below 0)`}</span>` : ''}` : 'none'}</span></div>
         ${res.length ? `<div class="acc-line"><span class="acc-k">Reserves</span><span class="acc-res">${res.map(x => {
@@ -4415,8 +4453,16 @@ function toggleLoot(td, playerName) {
   h += `<div class="expand-section-title">Loot Received ${loot.length ? `<span style="color:var(--text-dim);letter-spacing:0.05em;">— ${loot.length} item${loot.length === 1 ? '' : 's'} · ${srWins} via SR</span>` : ''}</div>`;
   h += loot.length ? `<div class="loot-list">${loot.map(lootChipHtml).join('')}</div>` : `<em class="no-loot">No loot recorded</em>`;
 
+  // Bad luck protection: every item this raider has lost an SR roll on and not won since
+  if (srRules.blp.enabled) {
+    const blp = Object.entries(derived().blp.losses[key] || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || itemName(a[0]).localeCompare(itemName(b[0])));
+    h += `<div class="expand-section-title" style="margin-top:14px;">Bad Luck Protection ${blp.length ? `<span style="color:var(--text-dim);letter-spacing:0.05em;">— ${blp.length} item${blp.length === 1 ? '' : 's'} with a boosted roll · hover for the roll</span>` : ''}</div>`;
+    h += blp.length ? `<div class="loot-list">${blp.map(([ik, n]) => `<span class="loot-item blp-chip" title="Rolls 1–${rollMax(n)} on this item (lost ${n} SR roll${n === 1 ? '' : 's'})">${itemLinkHtml(ik)}</span>`).join('')}</div>`
+      : `<em class="no-loot">No boosted rolls — every SR roll so far has been won or hasn't come up</em>`;
+  }
+
   // Raid-by-raid history: one collapsible row per attended raid (and per adjustment).
-  h += `<div class="expand-section-title" style="margin-top:14px;">Raids <span style="color:var(--text-dim);letter-spacing:0.05em;">— ${s.available} SR${s.available === 1 ? '' : 's'} available${srRules.streak.enabled ? ` · streak ${s.streak} (bonus in ${s.nextStreakIn})` : ''}</span></div>`;
+  h += `<div class="expand-section-title" style="margin-top:14px;">Raids <span style="color:var(--text-dim);letter-spacing:0.05em;">— ${s.available} SR${s.available === 1 ? '' : 's'} available${srRules.streak.enabled && s.nextStreakIn === 1 ? ' · next raid earns the streak bonus' : ''}</span></div>`;
   h += raiderRaidListHtml(key, s, hist, loot);
   // Roster edit (Roster page only)
   if (writeToken && groupingMode === 'roster') {
@@ -4706,8 +4752,9 @@ async function deleteRaid(id) {
 // ── Loot ────────────────────────────────────────────────────────
 function raidInstanceOrder(raid) {
   const fromSheets = raid.softres.flatMap(s => s.instances.map(i => i.name));
+  const fromLoot = raid.loot.flatMap(l => itemSources(l.itemKey).map(x => x.raid)); // e.g. new content built during this raid
   const all = Object.keys(glossary.raids);
-  return [...new Set([...fromSheets.filter(n => all.includes(n)), ...all])];
+  return [...new Set([...fromSheets, ...fromLoot, ...(raid.newContent || [])].filter(n => all.includes(n)).concat(all))];
 }
 
 function renderRaidLoot(el, raid) {
@@ -4722,7 +4769,9 @@ function renderRaidLoot(el, raid) {
   if (v.item && !items.includes(v.item)) v.item = '';
 
   const opt = (vals, cur) => vals.map(x => `<option value="${escHtml(x)}" ${x === cur ? 'selected' : ''}>${escHtml(x)}</option>`).join('');
+  const building = !!writeToken && !raid.softres.length; // no SR sheet → probably new content
   el.innerHTML = `
+    ${building ? newContentCardHtml(raid) : ''}
     ${instances.length ? `<div class="loot-selectors">
       <div class="loot-select-group"><label class="loot-select-label">Instance</label>
         <select class="loot-select" onchange="_raidView.raid=this.value;_raidView.boss='';_raidView.item='';renderRaidsPanel()">${opt(instances, v.raid)}</select></div>
@@ -4736,12 +4785,68 @@ function renderRaidLoot(el, raid) {
           ${items.map(k => { const n = reserveCountFor(res, k); return `<div class="loot-item-option ${k === v.item ? 'selected' : ''}" onclick="pickLootItem('${k}')">
             ${itemIconSmall(k)}<span style="flex:1;">${escHtml(itemName(k))}</span>${n ? `<span class="dd-res" title="${n} reserve${n === 1 ? '' : 's'} this raid">★ ${n}</span>` : ''}</div>`; }).join('')}
         </div></div>
-    </div>` : `<p class="gl-empty">The Item Glossary is empty. Add a softres link on the Reserves tab (it imports the instance's items) or add items under Management → Item Glossary.</p>`}
+    </div>` : building ? '' : `<p class="gl-empty">The Item Glossary is empty. Add a softres link on the Reserves tab (it imports the instance's items) or add items under Management → Item Glossary.</p>`}
     <div id="lootItemView"></div>
     <div class="section-title" style="margin-top:28px;">Loot this raid <span style="color:var(--text-dim);font-size:12px;letter-spacing:0.05em;">${raid.loot.length}</span></div>
     <div id="raidLootLog"></div>`;
   if (v.item) renderLootItemView(document.getElementById('lootItemView'), raid, v.item);
   renderRaidLootLog(document.getElementById('raidLootLog'), raid);
+}
+
+// ── New content: build the loot table live, as bosses die ──
+// Shown on raids with no SR sheet. Everything added here goes straight into the Item Glossary.
+function newContentCardHtml(raid) {
+  const v = _raidView, id = raid.id;
+  const enter = fn => `onkeydown="if(event.key==='Enter')${fn}('${id}')"`;
+  return `<div class="sheet-card nc-card">
+    <div class="gl-col-title">New content? Build the loot table as you go
+      <span class="nc-hint">No SR sheet on this raid. Add the instance, then each boss and its drops as they happen — everything is saved to the Item Glossary.</span></div>
+    <div class="nc-grid">
+      <div class="nc-field"><label class="loot-select-label">New instance</label>
+        <div class="nc-row"><input id="ncRaid" class="gl-input" placeholder="e.g. Blackwing Lair" ${enter('ncAddInstance')}><button class="small-gold-btn" onclick="ncAddInstance('${id}')">+ ADD</button></div></div>
+      <div class="nc-field"><label class="loot-select-label">New boss${v.raid ? ` in ${escHtml(v.raid)}` : ''}</label>
+        <div class="nc-row"><input id="ncBoss" class="gl-input" placeholder="${v.raid ? 'e.g. Razorgore the Untamed' : 'Add an instance first'}" ${v.raid ? '' : 'disabled'} ${enter('ncAddBoss')}><button class="small-gold-btn" onclick="ncAddBoss('${id}')" ${v.raid ? '' : 'disabled'}>+ ADD</button></div></div>
+      <div class="nc-field" style="flex:1.4;"><label class="loot-select-label">New drop${v.boss ? ` from ${escHtml(v.boss)}` : ''}</label>
+        <div class="nc-row"><input id="ncItem" class="gl-input" placeholder="${v.boss ? 'Wowhead link or ID (or item name)' : 'Add a boss first'}" ${v.boss ? '' : 'disabled'} ${enter('ncAddItem')}><button class="small-gold-btn" onclick="ncAddItem('${id}')" ${v.boss ? '' : 'disabled'}>+ ADD</button></div></div>
+    </div>
+  </div>`;
+}
+async function ncAddInstance(raidId) {
+  const name = document.getElementById('ncRaid')?.value.trim(); if (!name) return;
+  if (!glossary.raids[name]) glossary.raids[name] = {};
+  const raid = getRaid(raidId);
+  if (!(raid.newContent ||= []).includes(name)) { raid.newContent.push(name); saveRaids().catch(() => {}); }
+  Object.assign(_raidView, { raid: name, boss: '', item: '' });
+  renderRaidsPanel();
+  await saveGlossary().catch(() => {});
+}
+async function ncAddBoss() {
+  const name = document.getElementById('ncBoss')?.value.trim(); if (!name || !_raidView.raid) return;
+  const r = glossary.raids[_raidView.raid];
+  if (!r[name]) r[name] = [];
+  Object.assign(_raidView, { boss: name, item: '' });
+  renderRaidsPanel();
+  document.getElementById('ncItem')?.focus();
+  await saveGlossary().catch(() => {});
+}
+async function ncAddItem() {
+  const raw = document.getElementById('ncItem')?.value.trim(); if (!raw || !_raidView.boss) return;
+  const idm = raw.match(/item[=/](\d+)/i) || raw.match(/^(\d+)$/);
+  const id = idm ? +idm[1] : null;
+  const list = glossary.raids[_raidView.raid][_raidView.boss];
+  const existing = Object.entries(glossary.items).find(([, it]) => id ? it.wowheadId === id : normalizeName(it.name) === normalizeName(raw));
+  const key = existing ? existing[0] : itemKeyFor(id, raw);
+  if (!existing) glossary.items[key] = { name: id ? `Item ${id}` : raw, wowheadId: id, eligibleClasses: [], notes: '', icon: null, slot: '', classesSource: 'pending' };
+  if (!list.includes(key)) list.push(key);
+  _raidView.item = key;
+  renderRaidsPanel();
+  if (id && !existing) {
+    flash('Looking up the item on Wowhead…', 'loading');
+    const r = await enrichGlossaryItems([key]).catch(() => ({ failed: 1 }));
+    flash(r.failed ? 'Wowhead lookup failed — set the name and classes in the Item Glossary' : `Added ${itemName(key)}`, r.failed ? 'error' : 'success');
+    renderRaidsPanel();
+  } else if (!id) flash(`Added "${raw}" — no Wowhead ID, so set its eligible classes in the Item Glossary`, 'success');
+  await saveGlossary().catch(() => {});
 }
 
 function itemIconSmall(key) {
@@ -5197,7 +5302,8 @@ function glSelect(level, v) {
 }
 function glAdd(level) {
   const input = document.getElementById('glAdd_' + level);
-  const name = input?.value.trim(); if (!name) return;
+  let name = input?.value.trim(); if (!name) return;
+  if (level === 'item') { const m = name.match(/item[=/](\d+)/i); if (m) name = m[1]; } // accept a Wowhead link
   if (level === 'raid') { if (glossary.raids[name]) return alert('Raid exists.'); glossary.raids[name] = {}; _gl = { raid: name, boss: '', item: '' }; }
   else if (level === 'boss') { const r = glossary.raids[_gl.raid]; if (r[name]) return alert('Boss exists.'); r[name] = []; _gl.boss = name; _gl.item = ''; }
   else {
@@ -5209,6 +5315,10 @@ function glAdd(level) {
     else { key = itemKeyFor(asId, name); glossary.items[key] = { name: asId ? `Item ${asId}` : name, wowheadId: asId, eligibleClasses: [], notes: '', icon: null }; }
     if (!list.includes(key)) list.push(key);
     _gl.item = key;
+    if (asId && !existing) { // fill in name, slot, icon and classes from Wowhead
+      _glCommit().then(() => enrichGlossaryItems([key])).then(() => _glCommit()).catch(() => {});
+      return;
+    }
   }
   _glCommit();
 }
