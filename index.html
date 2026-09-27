@@ -1628,6 +1628,49 @@
   .raid-card-inst { font-family: 'Cinzel', serif; font-size: 18px; color: var(--gold-light); letter-spacing: 0.06em; text-shadow: 0 0 14px rgba(var(--accent-rgb), 0.25); }
   .raid-card-sub { font-size: 14px; color: var(--text-dim); }
 
+  /* Items page (everyone): browse raid → boss → item, BLP holders + SR history */
+  .iv-top { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+  .iv-top .loot-select-group { min-width: 200px; }
+  .iv-top .ac-input, .iv-top #ivSearch input { width: 100%; }
+  .iv-grid { display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .iv-list { border: 1px solid var(--border); border-radius: 6px; background: rgba(10,23,33,0.6); max-height: 640px; overflow-y: auto; }
+  .iv-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; border-top: 1px solid rgba(var(--line-rgb), 0.5); font-size: 14px; }
+  .iv-row:first-child { border-top: none; }
+  .iv-row:hover { background: rgba(var(--accent-rgb), 0.06); }
+  .iv-row.selected { background: rgba(var(--accent-rgb), 0.12); box-shadow: inset 3px 0 0 var(--gold); }
+  .iv-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iv-row-slot { margin-left: 6px; font-size: 11px; color: var(--text-dim); }
+  .iv-badge { font-size: 11px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+  .iv-badge.blp { color: var(--gold-light); border-color: rgba(var(--accent-rgb), 0.5); }
+  .iv-detail { border: 1px solid var(--border); border-radius: 6px; background: rgba(10,23,33,0.6); padding: 16px 18px; min-height: 200px; }
+  .iv-title { font-family: 'Cinzel', serif; font-size: 18px; }
+  .iv-sub { font-size: 13px; margin-top: 3px; }
+  .iv-dim { color: var(--text-dim); }
+  .iv-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0 18px; }
+  .iv-stats > div { border: 1px solid var(--border); border-radius: 4px; padding: 8px; text-align: center; }
+  .iv-stats b { display: block; font-family: 'Cinzel', serif; font-size: 20px; color: var(--gold-light); }
+  .iv-stats span { font-size: 12px; color: var(--text-dim); }
+  .iv-blp { display: flex; flex-direction: column; }
+  .iv-blp-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 130px; gap: 10px; padding: 5px 2px; border-top: 1px solid rgba(var(--line-rgb), 0.5); font-size: 15px; align-items: center; }
+  .iv-blp-row:first-child { border-top: none; }
+  .iv-blp-row .iv-dim { font-size: 12px; text-align: right; }
+  .iv-hist td { vertical-align: top; font-size: 14px; }
+  .iv-when { white-space: nowrap; }
+  .iv-when a { color: var(--gold-light); cursor: pointer; display: block; }
+  .iv-when .iv-dim { font-size: 12px; }
+  .iv-res { display: flex; flex-direction: column; gap: 2px; }
+  .iv-res-chip { font-size: 13px; }
+  .iv-tag { font-size: 11px; border: 1px solid var(--border); border-radius: 3px; padding: 0 5px; color: var(--text-dim); margin-left: 4px; }
+  .iv-tag.sr { color: #f08080; border-color: rgba(201,76,76,0.5); }
+  @media (max-width: 900px) {
+    .iv-grid { grid-template-columns: minmax(0, 1fr); }
+    .iv-detail { padding: 12px; }
+    .iv-blp-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .iv-blp-row .iv-dim { grid-column: 1 / -1; text-align: left; }
+    .iv-list { max-height: 300px; }
+    .iv-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
 <script src="https://wow.zamimg.com/widgets/power.js"></script>
@@ -1649,6 +1692,7 @@
       <div class="nav-segment-btns">
         <button class="group-btn group-btn-large active" data-mode="role" onclick="setGrouping('role')">Guild Overview</button>
         <button class="group-btn group-btn-large" data-mode="raids" onclick="_raidView.raidId='';setGrouping('raids')">Raids</button>
+        <button class="group-btn group-btn-large" data-mode="items" onclick="setGrouping('items')">Items</button>
       </div>
     </div>
     <div style="display:flex;justify-content:center;">
@@ -1674,6 +1718,7 @@
   <textarea id="claPersist" style="display:none;"></textarea>
 
   <div id="raidsPanel" style="display:none;padding:8px 0;"></div>
+  <div id="itemsPanel" style="display:none;padding:8px 0;"></div>
   <div id="rosterPanel" style="display:none;padding:8px 0;"></div>
   <div id="glossaryPanel" style="display:none;padding:8px 0;"></div>
   <div id="rulesPanel" style="display:none;padding:8px 0;"></div>
@@ -4233,7 +4278,7 @@ function flash(msg, type = 'success') { setStatus(msg, type); }
 // ═════════════════════════════════════════════════════════════════════════════
 const _navDropdowns = ['navDdGuildMgmt'];
 const _navDropdownModes = { navDdGuildMgmt: ['roster', 'glossary', 'rules'] };
-const PANEL_IDS = { raids: 'raidsPanel', roster: 'rosterPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
+const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
 
 function navDropdownToggle(id) {
   const menu = document.getElementById(id + 'Menu'), btn = document.getElementById(id + 'Btn');
@@ -4260,7 +4305,8 @@ function setGrouping(mode) {
   if (!writeToken && _navDropdownModes.navDdGuildMgmt.includes(mode)) mode = 'role'; // management is officers-only
   groupingMode = mode;
   _urlSetParam('tab', mode === 'role' ? '' : mode);
-  if (mode !== 'raids') { _urlSetParam('raid', ''); _urlSetParam('sub', ''); _urlSetParam('item', ''); }
+  if (mode !== 'raids') { _urlSetParam('raid', ''); _urlSetParam('sub', ''); }
+  if (mode === 'items') _urlSetParam('item', _iv.item); else if (mode !== 'raids') _urlSetParam('item', '');
   document.querySelectorAll('.group-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   _navDropdowns.forEach(d => document.getElementById(d + 'Btn')?.classList.toggle('has-active', (_navDropdownModes[d] || []).includes(mode)));
   for (const [m, id] of Object.entries(PANEL_IDS)) {
@@ -4274,6 +4320,7 @@ function setGrouping(mode) {
 function renderCurrent() {
   if (groupingMode === 'role') render(lastRenderData);
   else if (groupingMode === 'raids') renderRaidsPanel();
+  else if (groupingMode === 'items') renderItemsPanel();
   else if (groupingMode === 'roster') renderRosterPanel();
   else if (groupingMode === 'glossary') renderGlossaryPanel();
   else if (groupingMode === 'rules') renderRulesPanel();
@@ -5826,6 +5873,145 @@ async function saveRulesFromForm() {
   refreshAll();
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Items — the read-only item browser everyone can use. Pick a raid → boss → item
+// (or search) to see who has bad luck protection on it and its full SR history:
+// who reserved it each raid, what they rolled, and who it went to.
+// ═════════════════════════════════════════════════════════════════════════════
+let _iv = { raid: '', boss: '', item: '' };
+
+function ivSelect(level, v) {
+  if (level === 'raid') _iv = { raid: v, boss: Object.keys(glossary.raids[v] || {})[0] || '', item: '' };
+  else if (level === 'boss') { _iv.boss = v; _iv.item = ''; }
+  else _iv.item = v;
+  _urlSetParam('item', _iv.item);
+  renderItemsPanel();
+  if (level === 'item' && window.innerWidth < 900) document.getElementById('ivDetail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+// Jump straight to an item (search, links): open the raid/boss it drops from
+function ivOpenItem(key) {
+  if (!glossary.items[key]) return;
+  const src = itemSources(key).find(s => s.raid === _iv.raid) || itemSources(key)[0];
+  if (src) { _iv.raid = src.raid; _iv.boss = src.boss; }
+  ivSelect('item', key);
+}
+
+// Everyone whose next roll on this item is boosted, highest roll first
+function blpHoldersFor(itemKey) {
+  if (!srRules.blp.enabled) return [];
+  return Object.entries(derived().blp.losses).map(([pk, m]) => ({ pk, losses: m[itemKey] || 0 })).filter(x => x.losses > 0)
+    .map(x => ({ ...x, name: rosterPlayer(x.pk)?.name || canonicalNames?.[x.pk] || x.pk, roll: rollMax(x.losses) }))
+    .sort((a, b) => b.roll - a.roll || a.name.localeCompare(b.name));
+}
+// One row per raid where the item was reserved or handed out, newest first
+function itemHistory(itemKey) {
+  const { before, outcome } = derived().blp;
+  const rows = [];
+  for (const r of sortedRaids()) {
+    const res = raidReserves(r);
+    const reservers = Object.entries(res).filter(([, m]) => m[itemKey]).map(([pk, m]) => {
+      const name = rosterPlayer(pk)?.name || r.softres.map(s => effectiveReserves(s)[pk]?.name).find(Boolean) || pk;
+      const losses = before[r.id]?.[pk]?.[itemKey] || 0;
+      return { pk, name, count: m[itemKey], roll: rollMax(losses), outcome: outcome[r.id]?.[pk]?.[itemKey] || (r.status === 'active' ? 'pending' : 'nodrop') };
+    }).sort((a, b) => b.roll - a.roll || a.name.localeCompare(b.name));
+    const loot = r.loot.filter(l => l.itemKey === itemKey);
+    if (reservers.length || loot.length) rows.push({ raid: r, reservers, loot });
+  }
+  return rows.reverse();
+}
+
+function renderItemsPanel() {
+  const panel = document.getElementById('itemsPanel'); if (!panel) return;
+  const raids = Object.keys(glossary.raids);
+  if (!raids.length) { panel.innerHTML = '<div class="empty"><div class="icon">⚔</div><div>No items yet.</div></div>'; return; }
+  if (_iv.item && !glossary.items[_iv.item]) _iv.item = '';
+  if (_iv.item && !(glossary.raids[_iv.raid]?.[_iv.boss] || []).includes(_iv.item)) {
+    const src = itemSources(_iv.item)[0]; if (src) { _iv.raid = src.raid; _iv.boss = src.boss; }
+  }
+  if (!raids.includes(_iv.raid)) _iv = { raid: raids[0], boss: '', item: _iv.item };
+  const bosses = Object.keys(glossary.raids[_iv.raid] || {});
+  if (!bosses.includes(_iv.boss)) _iv.boss = bosses[0] || '';
+  const items = glossary.raids[_iv.raid]?.[_iv.boss] || [];
+
+  // Badges for the item list: how many raiders hold BLP on it, and how often it's dropped
+  const blpCount = {}, dropped = {};
+  for (const m of Object.values(derived().blp.losses)) for (const [k, n] of Object.entries(m)) if (n > 0) blpCount[k] = (blpCount[k] || 0) + 1;
+  for (const r of raidsData.raids) for (const l of r.loot) dropped[l.itemKey] = (dropped[l.itemKey] || 0) + 1;
+  const opt = (vals, cur) => vals.map(x => `<option value="${escHtml(x)}" ${x === cur ? 'selected' : ''}>${escHtml(x)}</option>`).join('');
+
+  panel.innerHTML = `
+    <div class="iv-top">
+      <div class="loot-select-group" style="flex:1.3;position:relative;"><label class="loot-select-label">Search all items</label><div id="ivSearch" style="position:relative;"></div></div>
+      <div class="loot-select-group"><label class="loot-select-label">Raid</label>
+        <select class="loot-select" onchange="ivSelect('raid', this.value)">${opt(raids, _iv.raid)}</select></div>
+      <div class="loot-select-group"><label class="loot-select-label">Boss</label>
+        <select class="loot-select" onchange="ivSelect('boss', this.value)">${opt(bosses, _iv.boss)}</select></div>
+    </div>
+    <div class="iv-grid">
+      <div class="iv-list">${items.length ? items.map(k => {
+        const it = glossary.items[k] || {};
+        return `<div class="iv-row${k === _iv.item ? ' selected' : ''}" onclick="ivSelect('item','${jsAttr(k)}')">
+          ${itemIconSmall(k)}<span class="iv-row-name">${escHtml(itemName(k))}${it.slot ? `<span class="iv-row-slot">${escHtml(it.slot)}</span>` : ''}</span>
+          ${blpCount[k] ? `<span class="iv-badge blp" title="${blpCount[k]} raider${blpCount[k] === 1 ? ' has' : 's have'} bad luck protection on this item">▲ ${blpCount[k]}</span>` : ''}
+          ${dropped[k] ? `<span class="iv-badge" title="Dropped ${dropped[k]}×">${dropped[k]}×</span>` : ''}</div>`;
+      }).join('') : '<div class="gl-empty">No items for this boss.</div>'}</div>
+      <div class="iv-detail" id="ivDetail">${_iv.item ? itemDetailHtml(_iv.item) : '<p class="gl-empty">Pick an item to see its SR history and who has bad luck protection on it.</p>'}</div>
+    </div>`;
+
+  const vals = Object.entries(glossary.items).map(([k, it]) => ({ value: k, label: it.name })).sort((a, b) => a.label.localeCompare(b.label));
+  buildAutocomplete({ container: document.getElementById('ivSearch'), inputId: 'ivSearchIn', placeholder: 'Item name…', items: vals,
+    renderOption: v => `<span style="display:inline-flex;align-items:center;gap:8px;">${itemIconSmall(v.value)}${escHtml(v.label)}</span>`,
+    onSelect: v => ivOpenItem(v.value) });
+  refreshWowhead(100);
+}
+
+function itemDetailHtml(key) {
+  const it = glossary.items[key] || { eligibleClasses: [] };
+  const classes = it.eligibleClasses || [];
+  const srcs = itemSources(key);
+  const hist = itemHistory(key);
+  const holders = blpHoldersFor(key);
+  const drops = hist.reduce((a, h) => a + h.loot.length, 0);
+  const srWins = hist.reduce((a, h) => a + h.loot.filter(l => l.sr).length, 0);
+  const reserves = hist.reduce((a, h) => a + h.reservers.reduce((x, r) => x + r.count, 0), 0);
+
+  const blpHtml = !srRules.blp.enabled ? '<div class="gl-empty">Bad luck protection is turned off in the SR rules.</div>'
+    : holders.length ? `<div class="iv-blp">${holders.map(h => `<div class="iv-blp-row">
+        <span class="iv-blp-name">${playerNameHtml(h.name)}</span>
+        <span class="blp-boost">/roll ${h.roll}</span>
+        <span class="iv-dim">lost ${h.losses} SR roll${h.losses === 1 ? '' : 's'}</span></div>`).join('')}</div>`
+    : '<div class="gl-empty">No one has bad luck protection on this item.</div>';
+
+  const histHtml = hist.length ? `<div style="overflow-x:auto;"><table class="mini-table iv-hist"><thead><tr><th>Raid</th><th>Reserved by</th><th>Went to</th></tr></thead><tbody>${hist.map(h => `<tr>
+      <td class="iv-when"><a onclick="openRaid('${h.raid.id}')">${fmtShort(h.raid.date)}</a><span class="iv-dim">${escHtml(h.raid.name)}${h.raid.optional ? ' · optional' : ''}${h.raid.status === 'active' ? ' · <span style="color:var(--gold);">active</span>' : ''}</span></td>
+      <td>${h.reservers.length ? `<div class="iv-res">${h.reservers.map(r => {
+          const [lab, col] = OUTCOME_LABEL[r.outcome] || [r.outcome, 'var(--text-dim)'];
+          return `<span class="iv-res-chip">${playerNameHtml(r.name)}${r.count > 1 ? ` <span class="sr-multi">×${r.count}</span>` : ''}
+            <span class="${r.roll > 100 ? 'blp-boost' : 'iv-dim'}">1–${r.roll}</span> <span style="color:${col};">${lab}</span></span>`;
+        }).join('')}</div>` : '<span class="iv-dim">—</span>'}</td>
+      <td>${h.loot.length ? h.loot.map(l => `<div>${playerNameHtml(l.recipient)} <span class="iv-tag ${l.sr ? 'sr' : ''}">${l.sr ? 'SR' : 'MS &gt; OS'}</span></div>`).join('')
+        : `<span class="iv-dim">${h.raid.status === 'active' ? 'not yet' : 'didn\'t drop'}</span>`}</td>
+    </tr>`).join('')}</tbody></table></div>`
+    : '<div class="gl-empty">No one has reserved or received this item yet.</div>';
+
+  return `<div class="iv-head">
+      <div class="iv-title">${itemLinkHtml(key)}</div>
+      <div class="iv-sub">${classes.length ? classes.map(c => `<span style="color:${CLASS_COLORS[c]};">${c}</span>`).join(' · ') : 'All classes'}${it.slot ? ` · ${escHtml(it.slot)}` : ''}${it.armorType ? ` · ${escHtml(it.armorType)}` : ''}</div>
+      <div class="iv-sub iv-dim">Drops from ${srcs.map(s => `${escHtml(s.raid)} → ${escHtml(s.boss)}`).join(', ') || '—'}</div>
+      ${it.notes ? `<div class="iv-sub iv-dim" style="font-style:italic;">${escHtml(it.notes)}</div>` : ''}
+    </div>
+    <div class="iv-stats">
+      <div><b>${reserves}</b><span>SR${reserves === 1 ? '' : 's'} placed</span></div>
+      <div><b>${drops}</b><span>dropped</span></div>
+      <div><b>${srWins}</b><span>won via SR</span></div>
+      <div><b>${holders.length}</b><span>with BLP</span></div>
+    </div>
+    <div class="expand-section-title">Bad Luck Protection</div>
+    ${blpHtml}
+    <div class="expand-section-title" style="margin-top:18px;">SR History</div>
+    ${histHtml}`;
+}
+
 
 // Molten Core item table as softres.it serves it (captured 2026-09-26), trimmed to
 // [id, name, from, classRestriction[], sharedBosses[], slot, quality]. Used ONLY by
@@ -6316,6 +6502,7 @@ async function boot() {
   _raidView.sub = _urlGetParam('sub') || 'loot';
   const tab = _urlGetParam('tab');
   if (tab) { groupingMode = tab; }
+  if (tab === 'items' && _urlGetParam('item')) _iv.item = _urlGetParam('item');
   await fetchData();
   setGrouping(_raidView.raidId && !tab ? 'raids' : (tab || 'role'));
   if (_raidView.raidId) { _urlSetParam('raid', _raidView.raidId); }
