@@ -1598,6 +1598,30 @@
   .ll-move { font-size: 11px; padding: 2px 8px; margin-right: 4px; min-width: 76px; }
   @media (max-width: 768px) { .ll-table col:last-child { width: 110px !important; } .ll-move { padding: 2px 5px; } }
 
+  /* Item Glossary: merging hand-made entries into SR-sheet ones */
+  .gl-merge, .gl-suggest { margin-bottom: 16px; border-color: rgba(var(--accent-rgb), 0.35); }
+  .gl-merge-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 14px; }
+  .gl-sugg { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; }
+  .gl-sugg:first-of-type { margin-top: 8px; }
+  .gl-sugg-meta { display: block; font-size: 12px; color: var(--text-dim); }
+  .gl-sugg-arrow { color: var(--gold); }
+  .gl-sugg-actions { display: flex; gap: 6px; }
+  .gl-sugg-banner { margin-bottom: 14px; padding: 8px 12px; border: 1px solid rgba(var(--accent-rgb), 0.35); border-radius: 4px; background: rgba(var(--accent-rgb), 0.06); font-size: 14px; }
+  .gl-sugg-banner a { color: var(--gold-light); cursor: pointer; margin-left: 6px; }
+  @media (max-width: 768px) { .gl-sugg { grid-template-columns: auto 1fr; } .gl-sugg-arrow { display: none; } .gl-sugg-actions { grid-column: 1 / -1; } }
+
+  /* Loot distribution SR box: every row uses the same column plan (minmax(0, …) stops content
+     from resizing a column row-by-row). Name · ×N · Current · /roll · flags · Award */
+  .sr-row { grid-template-columns: minmax(0, 1.4fr) 36px 96px minmax(0, 1.3fr) 124px; }
+  .sr-box.with-cur .sr-row { grid-template-columns: minmax(0, 1.3fr) 36px minmax(0, 1.4fr) 96px minmax(0, 1fr) 124px; }
+  .sr-row > span { min-width: 0; }
+  .sr-name, .sr-cur .cur-item { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sr-row > span:last-child { text-align: right; }
+  @media (max-width: 760px) {
+    .sr-row, .sr-box.with-cur .sr-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+    .sr-row .sr-cur, .sr-row .sr-bal { grid-column: 1 / -1; }
+  }
+
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
 <script src="https://wow.zamimg.com/widgets/power.js"></script>
@@ -3556,24 +3580,32 @@ function rebuildItemIcons() {
 function eligibleClassesOf(key) { return glossary.items[key]?.eligibleClasses || []; }
 
 // Import one softres instance (raid → bosses → items) into the glossary. Never
-// overwrites an item that already exists — manual class edits win.
+// overwrites a sheet item that already exists — manual class edits win. Entries a
+// leader added by hand that exactly match the sheet (same Wowhead ID, or same name
+// ignoring case/spacing/"the") are merged into the sheet's entries.
 // Accepts softres objects ({id,name,from,roles,tags,slot,quality}) or the compact
 // demo arrays ([id,name,from,roles,tags,slot,quality]).
 function importInstanceToGlossary(inst) {
   const raidName = inst.name;
-  const bosses = (glossary.raids[raidName] ||= {});
+  // A raid typed in by hand under a slightly different spelling ("Blackwing lair") is the same raid
+  const twin = Object.keys(glossary.raids).find(r => r !== raidName && _mk(r) === _mk(raidName));
+  glossary.raids[raidName] ||= {};
+  let touched = 0, autoMerged = 0;
+  if (twin) { touched += mergeRaidInto(twin, raidName); autoMerged++; }
+  const bosses = glossary.raids[raidName];
   for (const b of inst.boss_order || []) bosses[b] ||= [];
   let addedItems = 0, addedLinks = 0;
+  const srBosses = new Set(inst.boss_order || []), importedKeys = [];
   for (const raw of inst.items || []) {
     const it = Array.isArray(raw)
       ? { id: raw[0], name: raw[1], from: raw[2], roles: raw[3], tags: raw[4], slot: raw[5], quality: raw[6] }
       : raw;
     if (!it.id || !it.name) continue;
     const key = itemKeyFor(it.id, it.name);
+    const srClasses = (it.roles || []).filter(c => CLASSES.includes(c)).sort();
     if (!glossary.items[key]) {
-      const srClasses = (it.roles || []).filter(c => CLASSES.includes(c)).sort();
       glossary.items[key] = {
-        name: it.name, wowheadId: it.id,
+        name: it.name, wowheadId: it.id, origin: 'softres',
         eligibleClasses: srClasses, srClasses,
         // 'softres' = softres' own restriction; 'auto' = filled from Wowhead armor type;
         // 'manual' = a leader clicked a class button (never auto-overwritten again)
@@ -3581,17 +3613,151 @@ function importInstanceToGlossary(inst) {
         slot: it.slot || '', quality: it.quality || '', notes: '', icon: null,
       };
       addedItems++;
+    } else if (isManualItem(key)) {
+      // Added by hand (same Wowhead ID) before the SR sheet existed — it's the same item.
+      // Adopt the sheet's name and class restriction; keep the leader's notes and hand-set classes.
+      const cur = glossary.items[key];
+      if (cur.name !== it.name) { cur.name = it.name; touched += renameLootRecords(key, it.name); }
+      cur.origin = 'softres'; cur.srClasses = srClasses;
+      if (srClasses.length && cur.classesSource !== 'manual') { cur.eligibleClasses = srClasses; cur.classesSource = 'softres'; }
+      if (!cur.slot && it.slot) cur.slot = it.slot;
+      if ((cur.quality == null || cur.quality === '') && it.quality) cur.quality = it.quality;
+      autoMerged++;
     }
+    importedKeys.push(key);
     const from = it.from === 'Shared' && (it.tags || []).length ? it.tags : [it.from || 'Trash'];
     for (const b of from) {
+      srBosses.add(b);
       const list = (bosses[b] ||= []);
       if (!list.includes(key)) { list.push(key); addedLinks++; }
     }
   }
+  // Bosses typed in by hand whose names match a sheet boss (ignoring case, spaces, "the")
+  for (const b of Object.keys(bosses)) if (!srBosses.has(b)) {
+    const t = [...srBosses].find(x => _mk(x) === _mk(b));
+    if (t) { mergeBossInto(raidName, b, raidName, t); autoMerged++; }
+  }
+  // Items added by name only (no Wowhead ID) whose name matches a sheet item exactly
+  const byName = {}; for (const k of importedKeys) byName[_mk(glossary.items[k].name)] = k;
+  for (const k of Object.keys(glossary.items)) {
+    if (!k.startsWith('n:') || !isManualItem(k)) continue;
+    const t = byName[_mk(glossary.items[k].name)];
+    if (t) { touched += mergeItemInto(k, t); autoMerged++; }
+  }
   // Keep "Trash" last
   if (bosses.Trash) { const t = bosses.Trash; delete bosses.Trash; bosses.Trash = t; }
-  glossary.imported[inst.slug || raidName] = { name: raidName, at: new Date().toISOString() };
-  return { raid: raidName, addedItems, addedLinks };
+  glossary.imported[inst.slug || raidName] = { name: raidName, at: new Date().toISOString(), bosses: [...srBosses] };
+  return { raid: raidName, addedItems, addedLinks, autoMerged, raidsTouched: touched };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Merging hand-made glossary entries into SR-sheet ones
+// New content is often built by hand during the first raid (raid → boss → item),
+// and the softres sheet only turns up later. Exact matches merge on import; near
+// matches ("Razorgore" vs "Razorgore the Untamed") are suggested on the Item
+// Glossary page; anything else can be merged by hand there. Merging an item moves
+// every loot record (and any hand-edited reserve) onto the sheet's item.
+// ═════════════════════════════════════════════════════════════════════════════
+function _mk(n) { return normalizeName(String(n || '').replace(/\bthe\b/gi, ' ')); }
+function isManualItem(key) {
+  const it = glossary.items[key];
+  return !!it && (it.origin === 'manual' || (!it.origin && !Array.isArray(it.srClasses)));
+}
+function importedRaidNames() { return new Set(Object.values(glossary.imported || {}).map(x => x.name).filter(n => glossary.raids[n])); }
+function importedBossesOf(raid) {
+  const out = new Set();
+  for (const x of Object.values(glossary.imported || {})) if (x.name === raid)
+    for (const b of (x.bosses || Object.keys(glossary.raids[raid] || {}))) out.add(b); // older imports didn't record bosses
+  return out;
+}
+function _lev(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+  }
+  return d[b.length];
+}
+// Rough "probably the same name" check: a typo or two, or one name inside the other
+function nameCloseness(a, b) {
+  const x = _mk(a), y = _mk(b);
+  if (!x || !y) return null;
+  if (x === y) return 0;
+  const [sh, lo] = x.length <= y.length ? [x, y] : [y, x];
+  const d = _lev(x, y);
+  if (d <= Math.max(1, Math.floor(sh.length * 0.2))) return d;
+  if (sh.length >= 4 && lo.includes(sh)) return lo.length - sh.length;
+  return null;
+}
+function renameLootRecords(key, name) {
+  let n = 0;
+  for (const r of raidsData.raids) for (const l of r.loot) if (l.itemKey === key && l.name !== name) { l.name = name; n++; }
+  return n;
+}
+// Returns how many raid records changed (so the caller knows to save raids.json)
+function mergeItemInto(fromKey, toKey) {
+  const a = glossary.items[fromKey], b = glossary.items[toKey];
+  if (!a || !b || fromKey === toKey) return 0;
+  for (const bosses of Object.values(glossary.raids)) for (const list of Object.values(bosses)) {
+    const i = list.indexOf(fromKey); if (i < 0) continue;
+    if (list.includes(toKey)) list.splice(i, 1); else list[i] = toKey;
+  }
+  if (!b.notes && a.notes) b.notes = a.notes;
+  if (!b.icon && a.icon) b.icon = a.icon;
+  if (a.classesSource === 'manual' && !['softres', 'manual'].includes(b.classesSource)) { b.eligibleClasses = [...(a.eligibleClasses || [])]; b.classesSource = 'manual'; }
+  let touched = 0;
+  const fromId = a.wowheadId, toId = b.wowheadId;
+  for (const r of raidsData.raids) {
+    for (const l of r.loot) if (l.itemKey === fromKey) { l.itemKey = toKey; l.name = b.name; touched++; }
+    if (fromId && toId && fromId !== toId) for (const s of r.softres) for (const e of Object.values(s.edits || {}))
+      if (e.items?.includes(fromId)) { e.items = e.items.map(x => x === fromId ? toId : x); touched++; }
+  }
+  (glossary.mergedFrom ||= {})[fromKey] = toKey;
+  delete glossary.items[fromKey];
+  rebuildItemIcons(); invalidateDerived();
+  return touched;
+}
+function mergeBossInto(fromRaid, fromBoss, toRaid, toBoss) {
+  const src = glossary.raids[fromRaid]?.[fromBoss], dst = glossary.raids[toRaid]?.[toBoss];
+  if (!src || !dst || (fromRaid === toRaid && fromBoss === toBoss)) return 0;
+  for (const k of src) if (!dst.includes(k)) dst.push(k);
+  delete glossary.raids[fromRaid][fromBoss];
+  return 0;
+}
+function mergeRaidInto(from, to) {
+  if (!glossary.raids[from] || !glossary.raids[to] || from === to) return 0;
+  for (const [b, list] of Object.entries(glossary.raids[from])) {
+    const same = Object.keys(glossary.raids[to]).find(x => _mk(x) === _mk(b));
+    if (same) mergeBossInto(from, b, to, same); else glossary.raids[to][b] = list;
+  }
+  delete glossary.raids[from];
+  const t = glossary.raids[to]; if (t.Trash) { const x = t.Trash; delete t.Trash; t.Trash = x; }
+  let touched = 0;
+  for (const r of raidsData.raids) if (r.newContent?.includes(from)) { r.newContent = [...new Set(r.newContent.map(n => n === from ? to : n))]; touched++; }
+  return touched;
+}
+// Near matches between hand-made entries and SR-sheet entries, for the leader to confirm
+function glossaryMergeSuggestions() {
+  const out = [], no = new Set(glossary.notSame || []);
+  const add = s => { if (!no.has(s.id)) out.push(s); };
+  const imp = importedRaidNames();
+  for (const m of Object.keys(glossary.raids).filter(r => !imp.has(r)))
+    for (const i of imp) if (nameCloseness(m, i) !== null) add({ level: 'raid', from: m, to: i, id: `raid|${m}|${i}` });
+  for (const r of imp) {
+    const ib = importedBossesOf(r);
+    for (const b of Object.keys(glossary.raids[r]).filter(b => !ib.has(b)))
+      for (const t of ib) if (glossary.raids[r][t] && nameCloseness(b, t) !== null) add({ level: 'boss', raid: r, from: b, to: t, id: `boss|${r}|${b}|${t}` });
+  }
+  const manual = Object.keys(glossary.items).filter(k => isManualItem(k) && !/^Item \d+$/.test(glossary.items[k].name));
+  if (manual.length) {
+    const sheet = Object.keys(glossary.items).filter(k => !isManualItem(k));
+    for (const m of manual) {
+      sheet.map(k => [k, nameCloseness(itemName(m), itemName(k))]).filter(([, d]) => d !== null)
+        .sort((x, y) => x[1] - y[1]).slice(0, 3)
+        .forEach(([k]) => add({ level: 'item', from: m, to: k, id: `item|${m}|${k}` }));
+    }
+  }
+  return out;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -4003,6 +4169,7 @@ async function syncSoftres(raids, { quiet = false } = {}) {
       }
     }
   }
+  if (imported.some(r => r.raidsTouched)) changed = true; // hand-made items merged → loot records moved
   if (imported.length) {
     setStatus('Checking item types on Wowhead…', 'loading');
     await enrichGlossaryItems(null).catch(e => console.warn('Wowhead enrichment failed:', e.message));
@@ -4011,6 +4178,10 @@ async function syncSoftres(raids, { quiet = false } = {}) {
   if (changed && writeToken) await saveRaids().catch(() => {});
   invalidateDerived();
   if (errors.length && !quiet) errors.forEach(e => addError('softres', e));
+  if (imported.length && writeToken) {
+    const merged = imported.reduce((a, r) => a + (r.autoMerged || 0), 0), sugg = glossaryMergeSuggestions().length;
+    if (merged || sugg) setStatus(`SR sheet imported${merged ? ` · ${merged} hand-added entr${merged === 1 ? 'y' : 'ies'} merged` : ''}${sugg ? ` · ${sugg} possible match${sugg === 1 ? '' : 'es'} to review in the Item Glossary` : ''}`, 'success');
+  }
   return { changed, imported, errors };
 }
 
@@ -4776,7 +4947,10 @@ function renderRaidLoot(el, raid) {
 
   const opt = (vals, cur) => vals.map(x => `<option value="${escHtml(x)}" ${x === cur ? 'selected' : ''}>${escHtml(x)}</option>`).join('');
   const building = !!writeToken && !raid.softres.length; // no SR sheet → probably new content
+  const nSugg = writeToken && raid.softres.length ? glossaryMergeSuggestions().length : 0;
   el.innerHTML = `
+    ${nSugg ? `<div class="gl-sugg-banner">${nSugg} item${nSugg === 1 ? '' : 's'} added by hand may match entries from the SR sheet.
+      <a onclick="navDropdownSelect('navDdGuildMgmt','glossary')">Review in the Item Glossary →</a></div>` : ''}
     ${building ? newContentCardHtml(raid) : ''}
     ${instances.length ? `<div class="loot-selectors">
       <div class="loot-select-group"><label class="loot-select-label">Instance</label>
@@ -4842,7 +5016,7 @@ async function ncAddItem() {
   const list = glossary.raids[_raidView.raid][_raidView.boss];
   const existing = Object.entries(glossary.items).find(([, it]) => id ? it.wowheadId === id : normalizeName(it.name) === normalizeName(raw));
   const key = existing ? existing[0] : itemKeyFor(id, raw);
-  if (!existing) glossary.items[key] = { name: id ? `Item ${id}` : raw, wowheadId: id, eligibleClasses: [], notes: '', icon: null, slot: '', classesSource: 'pending' };
+  if (!existing) glossary.items[key] = { name: id ? `Item ${id}` : raw, wowheadId: id, origin: 'manual', eligibleClasses: [], notes: '', icon: null, slot: '', classesSource: 'pending' };
   if (!list.includes(key)) list.push(key);
   _raidView.item = key;
   renderRaidsPanel();
@@ -4921,8 +5095,7 @@ function renderLootItemView(el, raid, itemKey) {
     </div>
     ${it.notes ? `<div style="font-size:13px;color:var(--text-dim);font-style:italic;margin-bottom:8px;">${escHtml(it.notes)}</div>` : ''}
     ${srHtml}
-    <div class="gl-col-title" style="margin-top:18px;">Everyone else eligible & present <span style="color:var(--text-dim);">${others.length}</span></div>
-    <div style="overflow-x:auto;"><table class="compact-table" style="width:100%;border-collapse:collapse;">${tableColgroup(true, !!gearSlots)}<thead>${tableHeadHtml(th, true, !!gearSlots)}</thead>
+    <div style="overflow-x:auto;margin-top:18px;"><table class="compact-table" style="width:100%;border-collapse:collapse;">${tableColgroup(true, !!gearSlots)}<thead>${tableHeadHtml(th, true, !!gearSlots)}</thead>
       <tbody>${others.map(p => playerRowHtml(p, lastRenderData.raids || [], { showRole: true, current: gearSlots ? currentGearHtml(p.name, gearSlots) : undefined, action: alreadyThisRaid.has(normalizeName(p.name)) ? '<span class="tag-ok">✓ awarded</span>' : assignBtn(p.name, false) })).join('')}</tbody>
     </table></div>`;
 }
@@ -5326,7 +5499,7 @@ function glAdd(level) {
     const existing = Object.entries(glossary.items).find(([k, it]) => asId ? it.wowheadId === asId : normalizeName(it.name) === normalizeName(name));
     let key;
     if (existing) { key = existing[0]; }
-    else { key = itemKeyFor(asId, name); glossary.items[key] = { name: asId ? `Item ${asId}` : name, wowheadId: asId, eligibleClasses: [], notes: '', icon: null }; }
+    else { key = itemKeyFor(asId, name); glossary.items[key] = { name: asId ? `Item ${asId}` : name, wowheadId: asId, origin: 'manual', eligibleClasses: [], notes: '', icon: null }; }
     if (!list.includes(key)) list.push(key);
     _gl.item = key;
     if (asId && !existing) { // fill in name, slot, icon and classes from Wowhead
@@ -5423,7 +5596,10 @@ async function glImportSoftres() {
     flash('Checking item types on Wowhead…', 'loading');
     await enrichGlossaryItems(null).catch(() => {});
     await saveGlossary();
-    flash(res.map(r => `${r.raid}: +${r.addedItems} items`).join(' · ') || 'Nothing to import');
+    if (res.some(r => r.raidsTouched)) await saveRaids().catch(() => {});
+    const merged = res.reduce((a, r) => a + r.autoMerged, 0);
+    flash((res.map(r => `${r.raid}: +${r.addedItems} items`).join(' · ') || 'Nothing to import') + (merged ? ` · ${merged} hand-added entr${merged === 1 ? 'y' : 'ies'} merged` : ''));
+    refreshAll();
     _gl.raid = res[0]?.raid || _gl.raid;
     renderGlossaryPanel();
   } catch(e) { flash('Import failed: ' + e.message, 'error'); }
@@ -5440,7 +5616,7 @@ function renderGlossaryPanel() {
       <span class="gl-row-actions write-gated-hide" onclick="event.stopPropagation()">
         <button ${i === 0 ? 'disabled' : ''} onclick="glMove('${level}','${jsAttr(val)}',-1)">▲</button>
         <button ${i === entries.length - 1 ? 'disabled' : ''} onclick="glMove('${level}','${jsAttr(val)}',1)">▼</button>
-        <button onclick="glRename('${level}','${jsAttr(val)}')">✎</button><button onclick="glDelete('${level}','${jsAttr(val)}')">✕</button>
+        <button onclick="glRename('${level}','${jsAttr(val)}')">✎</button><button onclick="glStartMerge('${level}','${jsAttr(val)}')" title="Merge into another ${level}…">⇢</button><button onclick="glDelete('${level}','${jsAttr(val)}')">✕</button>
       </span></div>`).join('');
     return `<div class="gl-col"><div class="gl-col-title">${title} <span style="color:var(--text-dim);">${enabled ? entries.length : ''}</span></div>
       <div class="gl-list">${enabled ? (rows || '<div class="gl-empty">None yet</div>') : `<div class="gl-empty">Select a ${level === 'boss' ? 'raid' : 'boss'}</div>`}</div>
@@ -5466,20 +5642,128 @@ function renderGlossaryPanel() {
         <label style="color:var(--text-dim);">Notes</label><input id="glNotes" class="gl-input write-gated" value="${escHtml(it.notes || '')}" oninput="glMarkDirty()" placeholder="Shown when distributing">
       </div>
       <div class="write-gated-hide" style="display:flex;gap:8px;"><button id="glSaveBtn" class="gloss-btn-saveable small-gold-btn ${_glDirty ? 'gloss-btn-ready' : ''}" onclick="glSaveItem()">SAVE</button>
-        ${_glDirty ? `<button class="ghost-btn" onclick="_glDirty=false;loadGlossaryFromRepo().then(renderGlossaryPanel)">Discard</button>` : ''}</div>`;
+        ${_glDirty ? `<button class="ghost-btn" onclick="_glDirty=false;loadGlossaryFromRepo().then(renderGlossaryPanel)">Discard</button>` : ''}
+        <button class="ghost-btn" style="margin-left:auto;" onclick="glStartMerge('item','${jsAttr(_gl.item)}')" title="Replace this item with another one — its loot history moves over">⇢ Merge into…</button></div>`;
   }
   panel.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
       <div class="section-title" style="margin:0;">Item Glossary <span style="color:var(--text-dim);font-size:12px;letter-spacing:0.05em;">${Object.keys(glossary.raids).length} raids · ${Object.keys(glossary.items).length} items</span></div>
       <div class="write-gated-hide" style="display:flex;gap:6px;flex-wrap:wrap;"><button class="ghost-btn" onclick="glDetectAll()" title="Fill eligible classes from each item's Wowhead armor type (skips items you set by hand)">Detect classes</button><input id="glImportUrl" class="gl-input" placeholder="softres.it link to import items from" style="min-width:260px;"><button class="ghost-btn" onclick="glImportSoftres()">Import</button></div>
     </div>
+    ${writeToken ? glMergeBarHtml() + glSuggestionsHtml() : ''}
     <div class="gl-grid">
       ${col('raid', 'Raids', raids, _gl.raid, true, 'New raid…')}
       ${col('boss', 'Bosses', bosses, _gl.boss, !!_gl.raid, 'New boss…')}
       ${col('item', 'Items', items, _gl.item, !!(_gl.raid && _gl.boss), 'Name or Wowhead ID…')}
       <div class="gl-col gl-editor">${editor}</div>
     </div>`;
+  if (_glMerge?.level === 'item') {
+    const vals = Object.entries(glossary.items).filter(([k]) => k !== _glMerge.from).map(([k, it]) => ({ value: k, label: it.name + (isManualItem(k) ? '' : ' ✓') })).sort((a, b) => a.label.localeCompare(b.label));
+    buildAutocomplete({ container: document.getElementById('glMergeTo'), inputId: 'glMergeToIn', placeholder: 'Merge into… (✓ = from an SR sheet)', items: vals });
+  }
   refreshWowhead(100);
+}
+
+// ── Merging (see "Merging hand-made glossary entries" in core) ──
+let _glMerge = null; // { level, from, raid }
+let _glSugg = [], _glBossOpts = [];
+const _glWhere = k => itemSources(k).map(s => `${s.raid} → ${s.boss}`).join(', ');
+const _glAwarded = k => raidsData.raids.reduce((n, r) => n + r.loot.filter(l => l.itemKey === k).length, 0);
+function glStartMerge(level, v) {
+  _glMerge = { level, from: v, raid: _gl.raid };
+  renderGlossaryPanel();
+  document.getElementById('glMergeBar')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function glMergeBarHtml() {
+  const m = _glMerge; if (!m) return '';
+  let what, picker;
+  if (m.level === 'raid') {
+    what = `raid <b>${escHtml(m.from)}</b>`;
+    picker = `<select id="glMergeTo" class="roster-edit-sel">${Object.keys(glossary.raids).filter(r => r !== m.from).map(r => `<option value="${escHtml(r)}">${escHtml(r)}</option>`).join('')}</select>`;
+  } else if (m.level === 'boss') {
+    what = `boss <b>${escHtml(m.raid)} → ${escHtml(m.from)}</b>`;
+    // Same raid first — that's almost always where the match is
+    _glBossOpts = Object.entries(glossary.raids).flatMap(([r, bs]) => Object.keys(bs).filter(b => !(r === m.raid && b === m.from)).map(b => [r, b]))
+      .sort((x, y) => (y[0] === m.raid) - (x[0] === m.raid));
+    picker = `<select id="glMergeTo" class="roster-edit-sel">${_glBossOpts.map(([r, b], i) => `<option value="${i}">${escHtml(r)} → ${escHtml(b)}</option>`).join('')}</select>`;
+  } else {
+    const n = _glAwarded(m.from);
+    what = `item <b>${escHtml(itemName(m.from))}</b>${n ? ` <span style="color:var(--text-dim);">(awarded ${n}×)</span>` : ''}`;
+    picker = `<div id="glMergeTo" style="position:relative;min-width:300px;flex:1;"></div>`;
+  }
+  return `<div class="sheet-card gl-merge" id="glMergeBar">
+    <div class="gl-col-title">Merge</div>
+    <div class="gl-merge-row"><span>Merge ${what} into</span>${picker}
+      <button class="small-gold-btn" onclick="glDoMerge()">MERGE</button><button class="ghost-btn" onclick="_glMerge=null;renderGlossaryPanel()">Cancel</button></div>
+    <div class="nc-hint">${m.level === 'item' ? 'Every loot record for this item moves to the one you pick, and this entry is removed.'
+      : m.level === 'boss' ? 'Its items move to the boss you pick, and this boss is removed.'
+      : 'Its bosses move to the raid you pick (same-named bosses are combined), and this raid is removed.'}</div>
+  </div>`;
+}
+async function glDoMerge() {
+  const m = _glMerge; if (!m) return;
+  let touched = 0, msg;
+  if (m.level === 'raid') {
+    const to = document.getElementById('glMergeTo')?.value; if (!to) return;
+    if (!confirm(`Merge raid "${m.from}" into "${to}"?`)) return;
+    touched = mergeRaidInto(m.from, to); _gl = { raid: to, boss: '', item: '' }; msg = `Merged ${m.from} into ${to}`;
+  } else if (m.level === 'boss') {
+    const [toRaid, toBoss] = _glBossOpts[+document.getElementById('glMergeTo')?.value] || []; if (!toBoss) return;
+    if (!confirm(`Merge boss "${m.from}" into "${toRaid} → ${toBoss}"?`)) return;
+    mergeBossInto(m.raid, m.from, toRaid, toBoss); _gl = { raid: toRaid, boss: toBoss, item: '' }; msg = `Merged ${m.from} into ${toBoss}`;
+  } else {
+    const to = document.getElementById('glMergeToIn')?.dataset.value;
+    if (!to || !glossary.items[to]) { flash('Pick the item to merge into from the list.', 'error'); return; }
+    const n = _glAwarded(m.from);
+    if (!confirm(`Merge "${itemName(m.from)}" into "${itemName(to)}"?${n ? `\n${n} loot record${n === 1 ? '' : 's'} will move to it.` : ''}`)) return;
+    touched = mergeItemInto(m.from, to); _gl.item = to; msg = `Merged into ${itemName(to)}${touched ? ` · ${touched} loot record${touched === 1 ? '' : 's'} updated` : ''}`;
+  }
+  _glMerge = null;
+  await glAfterMerge(touched, msg);
+}
+async function glAfterMerge(touched, msg) {
+  renderGlossaryPanel();
+  await saveGlossary().catch(() => {});
+  if (touched) await saveRaids().catch(() => {});
+  flash(msg);
+  refreshAll();
+}
+function glSuggestionsHtml() {
+  _glSugg = glossaryMergeSuggestions();
+  if (!_glSugg.length) return '';
+  const row = (x, i) => {
+    let from, to;
+    if (x.level === 'item') {
+      const n = _glAwarded(x.from);
+      from = `${itemLinkHtml(x.from)} <span class="gl-sugg-meta">added by hand · ${escHtml(_glWhere(x.from) || 'no boss')}${n ? ` · awarded ${n}×` : ''}</span>`;
+      to = `${itemLinkHtml(x.to)} <span class="gl-sugg-meta">SR sheet · ${escHtml(_glWhere(x.to))}</span>`;
+    } else if (x.level === 'boss') {
+      from = `${escHtml(x.from)} <span class="gl-sugg-meta">added by hand · ${glossary.raids[x.raid][x.from].length} item${glossary.raids[x.raid][x.from].length === 1 ? '' : 's'}</span>`;
+      to = `${escHtml(x.to)} <span class="gl-sugg-meta">SR sheet · ${escHtml(x.raid)}</span>`;
+    } else {
+      from = `${escHtml(x.from)} <span class="gl-sugg-meta">added by hand</span>`;
+      to = `${escHtml(x.to)} <span class="gl-sugg-meta">SR sheet</span>`;
+    }
+    return `<div class="gl-sugg"><span class="tag-opt">${x.level}</span><span class="gl-sugg-from">${from}</span><span class="gl-sugg-arrow">→</span><span class="gl-sugg-to">${to}</span>
+      <span class="gl-sugg-actions"><button class="small-gold-btn" onclick="glApplySuggestion(${i})">MERGE</button><button class="ghost-btn" onclick="glNotSame(${i})">Not the same</button></span></div>`;
+  };
+  return `<div class="sheet-card gl-suggest"><div class="gl-col-title">Possible matches <span style="color:var(--text-dim);">${_glSugg.length}</span>
+      <span class="nc-hint">These were added by hand and look like entries from an SR sheet. Merging moves their loot history onto the SR sheet's entry.</span></div>
+    ${_glSugg.map(row).join('')}</div>`;
+}
+async function glApplySuggestion(i) {
+  const x = _glSugg[i]; if (!x) return;
+  let touched = 0;
+  if (x.level === 'raid') touched = mergeRaidInto(x.from, x.to);
+  else if (x.level === 'boss') mergeBossInto(x.raid, x.from, x.raid, x.to);
+  else touched = mergeItemInto(x.from, x.to);
+  await glAfterMerge(touched, `Merged ${x.level === 'item' ? itemName(x.to) : x.from + ' → ' + x.to}${touched ? ` · ${touched} loot record${touched === 1 ? '' : 's'} updated` : ''}`);
+}
+async function glNotSame(i) {
+  const x = _glSugg[i]; if (!x) return;
+  (glossary.notSame ||= []).push(x.id);
+  renderGlossaryPanel();
+  await saveGlossary().catch(() => {});
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
