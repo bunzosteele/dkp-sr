@@ -1683,6 +1683,22 @@
 
 .gargul-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; font-size:13px; }
 .gargul-bar code { font-size:12px; }
+.gx-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; background: rgba(255,255,255,0.015); }
+.gx-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 14px; }
+.gx-text { width: 100%; min-height: 70px; margin-top: 8px; font-family: monospace; font-size: 12px; box-sizing: border-box; }
+.gx-badge { font-size: 12px; border-radius: 999px; padding: 1px 9px; border: 1px solid var(--border); white-space: nowrap; }
+.gx-badge.warn { color: #f0b060; border-color: rgba(240,176,96,0.5); }
+.gx-badge.ok { color: #7fd18b; border-color: rgba(127,209,139,0.45); }
+.gx-table { margin-top: 8px; }
+.gx-table td { vertical-align: middle; }
+.gx-act { text-align: right; white-space: nowrap; }
+.gx-act button { margin-left: 6px; }
+.gx-kind { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.gx-kind.miss { color: #f08080; background: rgba(201,76,76,0.14); }
+.gx-kind.diff { color: #f0b060; background: rgba(240,176,96,0.12); }
+.gx-kind.extra { color: var(--gold-light); background: rgba(var(--accent-rgb),0.10); }
+.gx-kind.roll { color: #b9a4f0; background: rgba(150,120,230,0.13); }
+@media (max-width: 640px) { .gx-table td { display: block; border: 0; padding: 2px 4px; } .gx-table tr { display: block; border-bottom: 1px solid var(--border); padding: 6px 0; } .gx-act { text-align: left; } .gx-act button:first-child { margin-left: 0; } }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -4194,6 +4210,77 @@ function gargulImportPayload(raid) {
     wf: { v: 1, label: raid.name || raid.id, blp },
   };
 }
+// ── Gargul post-raid export (what actually got handed out in game) ──
+// base64(zlib(JSON)): { ID, playerMap, data:[{ itemID, awardedBy, awardedTo, isBonusLoot, received,
+// timestamp, rolls:[{ amount, player, timestamp, min, max }] }], checksum }. The checksum is Adler-32
+// (%08x) over one tab-separated line per award — a mismatch means the text was edited or truncated.
+const stripRealm = n => String(n || '').split('-')[0];
+function _adler32(str) {
+  let a = 1, b = 0;
+  for (const byte of new TextEncoder().encode(str)) { a = (a + byte) % 65521; b = (b + a) % 65521; }
+  return ((b << 16) | a) >>> 0;
+}
+async function parseGargulExport(text) {
+  const b64 = String(text || '').replace(/\s+/g, '');
+  if (!b64) throw new Error('Paste the export text first.');
+  let data;
+  try {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const json = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).text();
+    data = JSON.parse(json);
+  } catch (_) { throw new Error('That isn\'t a Gargul export — copy it from Gargul\'s "Export" window as-is.'); }
+  if (!Array.isArray(data?.data)) throw new Error('This Gargul export has no loot list.');
+  const line = a => [a.itemID, a.awardedBy, a.awardedTo, a.timestamp, a.isBonusLoot ? 1 : 0, a.received ? 1 : 0,
+    ...(a.rolls || []).flatMap(r => [r.amount, r.player, r.timestamp, r.min, r.max])].join('\t');
+  const sum = _adler32(data.data.map(line).join('\n')).toString(16).padStart(8, '0');
+  return {
+    exportId: String(data.ID ?? ''), checksumOk: sum === String(data.checksum || '').toLowerCase(), importedAt: new Date().toISOString(),
+    awards: data.data.map(a => ({ itemId: +a.itemID, to: String(a.awardedTo || ''), by: String(a.awardedBy || ''), at: +a.timestamp || null,
+      received: !!a.received, bonusLoot: !!a.isBonusLoot, de: a.awardedTo === '||de||',
+      rolls: (a.rolls || []).map(r => ({ player: String(r.player || ''), amount: +r.amount, min: +r.min, max: +r.max })) })),
+    ignored: [],
+  };
+}
+// Compare a raid's stored Gargul export with its loot log.
+//   missing:    handed out in game, not in the loot log
+//   extra:      in the loot log, not in the export
+//   mismatched: same item, different recipient (paired up after exact matches)
+//   rolls:      a reserver rolled a different range than their bad luck protection allowed
+function gargulDiff(raid) {
+  const g = raid.gargul; if (!g) return null;
+  const ign = new Set(g.ignored || []);
+  const cmpKey = ik => { const id = itemWowheadId(ik); return id ? 'id:' + id : ik; };
+  const exp = g.awards.map((a, i) => ({ a, i, ik: 'id:' + a.itemId, pk: a.de ? null : resolveRosterKey(stripRealm(a.to)) })).filter(x => !x.a.de);
+  let log = raid.loot.map(l => ({ l, ik: cmpKey(l.itemKey), pk: normalizeName(l.recipient) }));
+  let rest = [];
+  for (const x of exp) {
+    const j = log.findIndex(y => y.ik === x.ik && y.pk === x.pk);
+    if (j >= 0) log.splice(j, 1); else rest.push(x);
+  }
+  const mismatched = [];
+  rest = rest.filter(x => {
+    const j = log.findIndex(y => y.ik === x.ik);
+    if (j < 0) return true;
+    mismatched.push({ id: `mismatch:${x.i}:${log[j].l.id}`, award: x.a, ai: x.i, pk: x.pk, loot: log[j].l });
+    log.splice(j, 1); return false;
+  });
+  const missing = rest.map(x => ({ id: `missing:${x.i}`, award: x.a, ai: x.i, pk: x.pk }));
+  const extra = log.map(y => ({ id: `extra:${y.l.id}`, loot: y.l }));
+  const res = raidReserves(raid), rolls = [];
+  for (const x of exp) for (const r of x.a.rolls) {
+    const pk = resolveRosterKey(stripRealm(r.player));
+    if (!res[pk]?.[x.ik]) continue; // only reservers have a bad luck range to check
+    const want = rollFor(raid, pk, x.ik).max;
+    if (r.max !== want || r.min !== 1) rolls.push({ id: `roll:${x.i}:${pk}:${r.min}-${r.max}`, award: x.a, pk, player: r.player, got: `${r.min}-${r.max}`, want: `1-${want}` });
+  }
+  const live = list => list.filter(d => !ign.has(d.id));
+  const out = { missing: live(missing), extra: live(extra), mismatched: live(mismatched), rolls: live([...new Map(rolls.map(r => [r.id, r])).values()]),
+    de: g.awards.filter(a => a.de).length, total: g.awards.length, ignored: ign.size };
+  out.issues = out.missing.length + out.extra.length + out.mismatched.length + out.rolls.length;
+  out.wrongRaid = /^wf-/.test(g.exportId) && !g.exportId.startsWith(`wf-${raid.id}-`);
+  return out;
+}
+
 async function gargulImportString(raid) {
   const json = new TextEncoder().encode(JSON.stringify(gargulImportPayload(raid)));
   const zipped = new Uint8Array(await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
@@ -4906,6 +4993,7 @@ function renderRaidsPanel() {
       <div class="raid-card-stats">
         ${r.softres.length ? `<span>${nRes} Reserve${nRes === 1 ? '' : 's'}</span>` : '<span><em>no SR sheet</em></span>'}
         ${over ? `<span style="color:${C5};">⚠ ${over} over-reserved</span>` : ''}
+        ${gargulBadgeHtml(r)}
       </div></div>`;
   };
   const today = todayMST();
@@ -4923,12 +5011,12 @@ function renderRaidsPanel() {
     <div class="section-title">Active raids</div>
     ${act.length ? act.map(card).join('') : '<div class="gl-empty">No active raid.</div>'}
     <div class="section-title" style="margin-top:26px;">Past raids <span style="color:var(--text-dim);font-size:12px;letter-spacing:0.05em;">${past.length}</span></div>
-    ${past.length ? `<div style="overflow-x:auto;"><table class="mini-table raid-list"><thead><tr><th>Date</th><th>Raid</th><th>Present</th><th>Reserves</th><th>Loot</th><th>CLA</th></tr></thead><tbody>
+    ${past.length ? `<div style="overflow-x:auto;"><table class="mini-table raid-list"><thead><tr><th>Date</th><th>Raid</th><th>Present</th><th>Reserves</th><th>Loot</th><th>Gargul</th><th>CLA</th></tr></thead><tbody>
       ${past.map(r => `<tr onclick="openRaid('${r.id}')" style="cursor:pointer;">
         <td>${fmtShort(r.date)}</td><td>${escHtml(r.name)} ${r.optional ? '<span class="tag-opt">optional</span>' : ''}</td>
         <td>${rosterKeys().filter(k => attendanceOf(r, k).present).length}</td>
         <td>${Object.values(raidReserves(r)).reduce((a, m) => a + Object.values(m).reduce((x, y) => x + y, 0), 0)}</td>
-        <td>${r.loot.length}</td><td>${r.claLabel ? '✓' : '<span style="color:var(--text-dim);">—</span>'}</td></tr>`).join('')}
+        <td>${r.loot.length}</td><td>${gargulBadgeHtml(r) || '<span style="color:var(--text-dim);">—</span>'}</td><td>${r.claLabel ? '✓' : '<span style="color:var(--text-dim);">—</span>'}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="gl-empty">None yet.</div>'}`;
 }
 
@@ -5090,6 +5178,7 @@ function renderRaidLoot(el, raid) {
     </div>` : building ? '' : `<p class="gl-empty">The Item Glossary is empty. Add a softres link on the Reserves tab (it imports the instance's items) or add items under Management → Item Glossary.</p>`}
     <div id="lootItemView"></div>
     <div class="section-title" style="margin-top:28px;">Loot this raid <span style="color:var(--text-dim);font-size:12px;letter-spacing:0.05em;">${raid.loot.length}</span></div>
+    ${writeToken ? gargulCheckHtml(raid) : ''}
     <div id="raidLootLog"></div>`;
   if (v.item) renderLootItemView(document.getElementById('lootItemView'), raid, v.item);
   renderRaidLootLog(document.getElementById('raidLootLog'), raid);
@@ -5282,6 +5371,95 @@ async function removeLoot(raidId, i) {
   const raid = getRaid(raidId); const l = raid.loot[i]; if (!l) return;
   if (!confirm(`Remove ${l.name} → ${l.recipient}?`)) return;
   raid.loot.splice(i, 1); await saveRaids().catch(() => {}); refreshAll();
+}
+
+// ── Gargul post-raid export: catch awards that never made it into the loot log ──
+function gargulBadgeHtml(raid) {
+  const d = gargulDiff(raid); if (!d) return '';
+  return d.issues ? `<span class="gx-badge warn" title="Loot log differs from the Gargul export">⚠ ${d.issues} loot difference${d.issues === 1 ? '' : 's'}</span>`
+    : '<span class="gx-badge ok" title="Loot log matches the Gargul export">✓ Gargul</span>';
+}
+function gargulCheckHtml(raid) {
+  const d = gargulDiff(raid);
+  const paste = (open, label) => `<details class="gx-paste" ${open ? 'open' : ''}><summary class="subtle-link">${label}</summary>
+      <textarea id="gxText" class="gl-input gx-text" placeholder="In game: /gl export → copy the post-raid export → paste it here"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;"><button class="small-gold-btn" onclick="importGargulExport('${raid.id}')">CHECK LOOT</button></div></details>`;
+  if (!d) return `<div class="gx-box">${paste(raid.status === 'past', 'Check against the Gargul export')}</div>`;
+  const g = raid.gargul;
+  const who = (pk, raw) => rosterPlayer(pk) ? playerNameHtml(rosterPlayer(pk).name) : `${escHtml(stripRealm(raw))} <span class="tag-warn">not on roster</span>`;
+  const item = a => itemLinkHtml('id:' + a.itemId, a.name);
+  const ign = id => `<button class="ghost-btn" onclick="gargulIgnore('${raid.id}','${id}')" title="It's fine — stop flagging this">Ignore</button>`;
+  const rows = [
+    ...d.missing.map(x => `<tr><td><span class="gx-kind miss">Not logged</span></td><td>${item(x.award)}</td><td>${who(x.pk, x.award.to)}${x.award.received ? '' : ' <span class="tag-opt" title="Gargul marks it as not yet traded">not received</span>'}</td>
+      <td class="gx-act"><button class="small-gold-btn" onclick="gargulAddMissing('${raid.id}',${x.ai})">ADD</button>${ign(x.id)}</td></tr>`),
+    ...d.mismatched.map(x => `<tr><td><span class="gx-kind diff">Different winner</span></td><td>${item(x.award)}</td><td>Gargul: ${who(x.pk, x.award.to)}<br><span class="iv-dim">Log: ${playerNameHtml(x.loot.recipient)}</span></td>
+      <td class="gx-act"><button class="small-gold-btn" onclick="gargulUseWinner('${raid.id}',${x.ai},'${x.loot.id}')">USE GARGUL'S</button>${ign(x.id)}</td></tr>`),
+    ...d.extra.map(x => `<tr><td><span class="gx-kind extra">Not in Gargul</span></td><td>${itemLinkHtml(x.loot.itemKey, x.loot.name)}</td><td>${playerNameHtml(x.loot.recipient)}</td>
+      <td class="gx-act"><button class="ghost-btn danger" onclick="gargulRemoveLogged('${raid.id}','${x.loot.id}')">Remove</button>${ign(x.id)}</td></tr>`),
+    ...d.rolls.map(x => `<tr><td><span class="gx-kind roll">Roll range</span></td><td>${item(x.award)}</td><td>${who(x.pk, x.player)} rolled ${x.got}, should have been <b>${x.want}</b></td>
+      <td class="gx-act">${ign(x.id)}</td></tr>`),
+  ];
+  return `<div class="gx-box">
+    <div class="gx-head"><b>Gargul export</b>
+      <span class="iv-dim">${d.total} award${d.total === 1 ? '' : 's'}${d.de ? ` (${d.de} disenchanted)` : ''} · checked ${fmtAgo(g.importedAt)}${d.ignored ? ` · ${d.ignored} ignored` : ''}</span>
+      ${d.issues ? `<span class="gx-badge warn">⚠ ${d.issues} to review</span>` : '<span class="gx-badge ok">✓ Loot log matches</span>'}
+      <span style="margin-left:auto;display:flex;gap:6px;">${d.missing.length > 1 ? `<button class="ghost-btn" onclick="gargulAddMissing('${raid.id}')">Add all ${d.missing.length} missing</button>` : ''}
+        <button class="ghost-btn" onclick="gargulReplace('${raid.id}')">Replace</button><button class="ghost-btn danger" onclick="gargulRemove('${raid.id}')">Remove</button></span></div>
+    ${g.checksumOk ? '' : '<div class="warn-banner">The export\'s checksum doesn\'t match its contents — it may have been edited or cut off when copying.</div>'}
+    ${d.wrongRaid ? '<div class="warn-banner">This export comes from a Gargul import made for a different raid. Check you pasted the right one.</div>' : ''}
+    ${rows.length ? `<table class="mini-table gx-table"><tbody>${rows.join('')}</tbody></table>` : ''}
+    ${_raidView.gxReplace ? paste(true, 'Paste a new export') : ''}
+  </div>`;
+}
+async function importGargulExport(raidId) {
+  const raid = getRaid(raidId);
+  try {
+    const g = await parseGargulExport(document.getElementById('gxText')?.value);
+    // Items the glossary doesn't know (e.g. another instance) get their name from Wowhead, best effort
+    const unknown = [...new Set(g.awards.map(a => a.itemId).filter(id => !glossary.items['id:' + id]))];
+    const names = Object.fromEntries(await Promise.all(unknown.map(id => fetchWowheadItem(id).then(i => [id, i.name], () => [id, '']))));
+    for (const a of g.awards) if (names[a.itemId]) a.name = names[a.itemId];
+    raid.gargul = g;
+  } catch (e) { flash(e.message, 'error'); return; }
+  _raidView.gxReplace = false;
+  await saveRaids().catch(() => {});
+  const d = gargulDiff(raid);
+  flash(d.issues ? `Gargul export checked — ${d.issues} difference${d.issues === 1 ? '' : 's'} to review` : 'Gargul export checked — loot log matches', d.issues ? 'loading' : 'success');
+  refreshAll();
+}
+function _gargulLootRecord(raid, a) {
+  const pk = resolveRosterKey(stripRealm(a.to)), ik = itemKeyFor(a.itemId);
+  return { id: _uid('l_'), itemKey: ik, name: itemName(ik, a.name), recipient: rosterPlayer(pk)?.name || stripRealm(a.to),
+    sr: !!raidReserves(raid)[pk]?.[ik], at: a.at ? new Date(a.at * 1000).toISOString() : new Date().toISOString(), source: 'gargul' };
+}
+async function gargulAddMissing(raidId, ai) {
+  const raid = getRaid(raidId), d = gargulDiff(raid); if (!d) return;
+  const list = ai === undefined ? d.missing : d.missing.filter(x => x.ai === ai);
+  for (const x of list) raid.loot.push(_gargulLootRecord(raid, x.award));
+  await saveRaids().catch(() => {});
+  flash(`Added ${list.length} award${list.length === 1 ? '' : 's'} from Gargul`);
+  refreshAll();
+}
+async function gargulUseWinner(raidId, ai, lootId) {
+  const raid = getRaid(raidId), l = raid.loot.find(x => x.id === lootId), a = raid.gargul?.awards[ai]; if (!l || !a) return;
+  const rec = _gargulLootRecord(raid, a);
+  Object.assign(l, { recipient: rec.recipient, sr: rec.sr, source: 'gargul' });
+  await saveRaids().catch(() => {}); refreshAll();
+}
+async function gargulRemoveLogged(raidId, lootId) {
+  const raid = getRaid(raidId), i = raid.loot.findIndex(x => x.id === lootId); if (i < 0) return;
+  if (!confirm(`Remove ${raid.loot[i].name} → ${raid.loot[i].recipient} from the loot log?`)) return;
+  raid.loot.splice(i, 1); await saveRaids().catch(() => {}); refreshAll();
+}
+async function gargulIgnore(raidId, id) {
+  const g = getRaid(raidId).gargul; if (!g) return;
+  (g.ignored ||= []).includes(id) || g.ignored.push(id);
+  await saveRaids().catch(() => {}); refreshAll();
+}
+function gargulReplace() { _raidView.gxReplace = !_raidView.gxReplace; renderRaidsPanel(); }
+async function gargulRemove(raidId) {
+  if (!confirm('Remove the stored Gargul export from this raid? The loot log is not changed.')) return;
+  delete getRaid(raidId).gargul; await saveRaids().catch(() => {}); refreshAll();
 }
 
 // ── Reserves ────────────────────────────────────────────────────
@@ -6527,6 +6705,21 @@ async function applyDemoFixture(fx) {
       parsed[r.date] = { sheetDate: r.date + 'T12:00:00.000Z', claPresence: keys, canonicalNames: {}, gearIssues: {}, latestIssues: {}, buffScores, gearListing: {} };
     }
     raids.push(raid);
+  }
+  // The latest raid gets a Gargul post-raid export with one MS > OS award the loot master forgot
+  // to log (an item nobody reserved, so leaving it out doesn't change anyone's bad luck protection).
+  const lastFx = fx.raids[fx.raids.length - 1], lastRaid = raids[raids.length - 1];
+  if (lastFx && lastRaid) {
+    const reserved = new Set(lastFx.reserves.flatMap(x => x.items.map(Number)));
+    const forgot = [...lastFx.loot].reverse().find(l => !l.sr && l.to !== '||de||' && !reserved.has(+l.item));
+    if (forgot) {
+      const j = lastRaid.loot.findIndex(l => l.itemKey === 'id:' + forgot.item && l.recipient === forgot.to);
+      if (j >= 0) lastRaid.loot.splice(j, 1);
+    }
+    const t0 = Math.floor(new Date(lastFx.date + 'T04:00:00Z').getTime() / 1000);
+    lastRaid.gargul = { exportId: `wf-${lastRaid.id}-${t0}`, checksumOk: true, importedAt: lastFx.date + 'T06:30:00Z', ignored: [],
+      awards: lastFx.loot.map((l, i) => ({ itemId: +l.item, to: l.to === '||de||' ? '||de||' : l.to.split(' ')[0] + '-Dreamscythe', by: 'Bunzypoo-Dreamscythe',
+        at: t0 + i * 90, received: true, bonusLoot: false, de: l.to === '||de||', rolls: [] })) };
   }
   // Current gear on the latest CLA: Molten Core pieces, what they won first
   const lastCla = [...fx.raids].reverse().find(r => r.cla);
