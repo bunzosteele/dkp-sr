@@ -1681,6 +1681,15 @@
   .iv-sort button.on { color: var(--gold-light); border-color: rgba(var(--accent-rgb), 0.55); background: rgba(var(--accent-rgb), 0.08); }
   .iv-badge.sr { color: #f08080; border-color: rgba(201,76,76,0.45); }
 
+  /* Softres raid series on a sheet card */
+  .series-line { font-size: 13px; margin: 6px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .series-line a { color: var(--gold-light); }
+  .blp-softres { font-size: 14px; }
+  .series-rule { border-color: rgba(var(--accent-rgb), 0.4); }
+  .series-rule a { color: var(--gold-light); }
+  .series-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .series-facts span { border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--text); }
+
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
 <script src="https://wow.zamimg.com/widgets/power.js"></script>
@@ -4127,7 +4136,7 @@ function computeBlp() {
         if (!present) { outcome[r.id][pk][ik] = 'absent'; continue; }
         if (w?.has(pk)) { outcome[r.id][pk][ik] = 'won'; }
         else if (w && w.size) { (losses[pk] ||= {})[ik] = (losses[pk][ik] || 0) + 1; outcome[r.id][pk][ik] = 'lost'; }
-        else outcome[r.id][pk][ik] = 'nodrop';
+        else outcome[r.id][pk][ik] = r.status === 'active' ? 'pending' : 'nodrop'; // still to drop tonight
       }
     }
     for (const [ik, set] of Object.entries(winners)) for (const pk of set) if (losses[pk]) losses[pk][ik] = 0;
@@ -4144,6 +4153,42 @@ function srStats(playerName) {
 }
 function blpLossesBefore(raidId, playerKey, itemKey) {
   return derived().blp.before[raidId]?.[playerKey]?.[itemKey] || 0;
+}
+// ── Softres raid series bad luck protection ──
+// A raid whose sheet is in a softres raid series takes its BLP from softres: each sheet carries
+// every raider's bonus going into that raid (blpBonuses, keyed by lower-cased character name).
+// Gargul turns a bonus into 100 + bonus points; with "increased max" that's /roll 1–(100 + bonus).
+function seriesSheetOf(raid) { return raid?.softres?.find(s => s.series?.blpEnabled) || null; }
+function currentSeriesSheet() {
+  const rs = sortedRaids().filter(r => seriesSheetOf(r));
+  const act = rs.filter(r => r.status === 'active');
+  return seriesSheetOf((act.length ? act : rs).slice(-1)[0]) || null;
+}
+function softresNameFor(sheet, playerKey) {
+  const r = effectiveReserves(sheet)[playerKey];
+  if (r?.name) return r.name;
+  const full = rosterPlayer(playerKey)?.name || playerKey;
+  return full.split(' ')[0]; // softres names are 12-char character names; our raiders are "First Last"
+}
+function softresBonusFor(sheet, playerKey) {
+  if (!sheet?.series?.blpEnabled) return 0;
+  const b = sheet.blpBonuses || {};
+  const name = softresNameFor(sheet, playerKey).toLowerCase();
+  const raw = b[name] ?? Object.entries(b).find(([n]) => normalizeName(n) === normalizeName(name))?.[1] ?? 0;
+  const cap = sheet.series.maxRollBonus;
+  return cap ? Math.min(raw, cap) : raw;
+}
+// Roll range for a raider on an item in a raid (series-aware; falls back to our own per-item BLP)
+function rollFor(raid, playerKey, itemKey) {
+  const sh = seriesSheetOf(raid);
+  if (sh) {
+    const reserved = !!raidReserves(raid)[playerKey]?.[itemKey];
+    if (sh.series.reservesOnly && !reserved) return { max: 100, bonus: 0, source: 'softres' };
+    const bonus = softresBonusFor(sh, playerKey);
+    return { max: 100 + bonus, bonus, source: 'softres', series: sh.series.name };
+  }
+  const losses = blpLossesBefore(raid.id, playerKey, itemKey);
+  return { max: rollMax(losses), bonus: rollMax(losses) - 100, losses, source: 'dashboard' };
 }
 function rollMax(losses) {
   return 100 + (srRules.blp.enabled ? losses * srRules.blp.step : 0);
@@ -4188,14 +4233,35 @@ function applySoftresData(sheet, raid) {
   sheet.reserveLimit = raid.reserve_limit ?? null;
   sheet.locked = !!raid.locked;
   sheet.hidden = !!raid.hide_reserves;
-  sheet.reserves = (raid.reserves || []).map(r => ({ name: r.name, spec: r.spec ?? null, items: [...(r.items || [])], note: r.note || '' }));
+  sheet.reserves = (raid.reserves || []).map(r => ({ name: r.name, spec: r.spec ?? null, items: [...(r.items || [])], note: r.note || '', ...(r.discord_id ? { discordId: String(r.discord_id) } : {}) }));
+  // Softres raid series (bad luck protection is managed there when the sheet is in a series)
+  const rs = raid.raid_series;
+  const beforeSeries = JSON.stringify([sheet.series, sheet.blpBonuses, sheet.verifiedAt]);
+  sheet.series = rs ? { id: rs.id, name: rs.name, blpEnabled: !!rs.blp_enabled, system: rs.blp_system,
+    reservedItemPoints: rs.reserved_item_points ?? 0, repeatPoints: rs.reserved_item_repeat_points ?? 0, noLootPoints: rs.no_loot_points ?? 0,
+    pointsPerRoll: rs.roll_points_per_bonus || 1, maxRollBonus: rs.roll_max_per_raid ?? null, reservesOnly: !!rs.roll_reserves_only, carryOnFail: !!rs.rolls_carry_on_fail } : null;
+  // { lower-cased character name: bonus going INTO this raid } — earned on earlier verified raids
+  sheet.blpBonuses = raid.blp_bonuses && !Array.isArray(raid.blp_bonuses) ? { ...raid.blp_bonuses } : {};
+  sheet.verifiedAt = raid.verified_at ? new Date(raid.verified_at * 1000).toISOString() : null;
+  sheet.raidDate = raid.raid_date ? new Date(raid.raid_date * 1000).toISOString() : null;
   sheet.syncedAt = new Date().toISOString();
   sheet.syncError = null;
   const imported = [];
   for (const inst of raid.instances || []) {
     if (inst.items?.length && !glossary.imported[inst.slug || inst.name]) imported.push(importInstanceToGlossary(inst));
   }
-  return { changed: before !== JSON.stringify(sheet.reserves), imported };
+  return { changed: before !== JSON.stringify(sheet.reserves) || beforeSeries !== JSON.stringify([sheet.series, sheet.blpBonuses, sheet.verifiedAt]), imported };
+}
+
+// Verified loot results (public): /raid/CODE/result. Fetched once per sheet after verification.
+async function fetchSoftresResults(code) {
+  const res = await fetch(corsProxyUrl(`https://softres.it/raid/${encodeURIComponent(code)}/result`), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`softres results fetch failed (HTTP ${res.status})`);
+  const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+  const page = JSON.parse(doc.querySelector('[data-page]')?.getAttribute('data-page') || 'null');
+  const loot = page?.props?.loot;
+  if (!Array.isArray(loot)) throw new Error('softres results page had no loot list');
+  return loot.map(l => ({ item: l.item_id, name: l.item?.name || '', winner: l.winner?.name || '', received: !!l.received, de: l.winner?.name === '||de||', at: l.awarded_at || null }));
 }
 
 async function syncSoftresSheet(raid, sheet) {
@@ -4203,6 +4269,7 @@ async function syncSoftresSheet(raid, sheet) {
   try {
     const data = await fetchSoftresRaid(sheet.code);
     const r = applySoftresData(sheet, data);
+    if (sheet.verifiedAt && !sheet.results) { sheet.results = await fetchSoftresResults(sheet.code); r.changed = true; }
     return r;
   } catch(e) {
     sheet.syncError = e.message;
@@ -4588,7 +4655,7 @@ function srHistory(key) {
     if (!items) continue;
     for (const [ik, count] of Object.entries(items)) {
       rows.push({ raid: r, itemKey: ik, count, outcome: outcome[r.id]?.[key]?.[ik] || (r.status === 'active' ? 'pending' : 'nodrop'),
-        losses: before[r.id]?.[key]?.[ik] || 0 });
+        losses: before[r.id]?.[key]?.[ik] || 0, roll: rollFor(r, key, ik) });
     }
   }
   return rows.reverse();
@@ -4634,8 +4701,9 @@ function raiderRaidListHtml(key, s, hist, loot) {
         <div class="acc-line"><span class="acc-k">SRs used</span><span>${e.reserved ? `${e.reserved}${e.present ? '' : ' (not charged — absent)'}${e.over ? ` · <span style="color:${C5};">${e.status === 'active' ? `${e.over} more than available` : `${e.over} forgiven (balance can't go below 0)`}</span>` : ''}` : 'none'}</span></div>
         ${res.length ? `<div class="acc-line"><span class="acc-k">Reserves</span><span class="acc-res">${res.map(x => {
             const [lab, col] = OUTCOME_LABEL[x.outcome] || [x.outcome, 'var(--text-dim)'];
-            const rm = rollMax(x.losses);
-            return `<span class="acc-item">${itemLinkHtml(x.itemKey)}${x.count > 1 ? ` <span class="sr-multi">×${x.count}</span>` : ''} <span class="${rm > 100 ? 'blp-boost' : ''}" style="font-size:12px;" title="${x.losses ? `Lost ${x.losses}× before this raid` : ''}">1–${rm}</span> <span style="color:${col};font-size:12px;">${lab}</span></span>`;
+            const rm = x.roll.max;
+            const tip = x.roll.source === 'softres' ? (x.roll.bonus ? `Softres bonus +${x.roll.bonus} going into this raid` : '') : (x.losses ? `Lost ${x.losses}× before this raid` : '');
+            return `<span class="acc-item">${itemLinkHtml(x.itemKey)}${x.count > 1 ? ` <span class="sr-multi">×${x.count}</span>` : ''} <span class="${rm > 100 ? 'blp-boost' : ''}" style="font-size:12px;" title="${tip}">1–${rm}</span> <span style="color:${col};font-size:12px;">${lab}</span></span>`;
           }).join('')}</span></div>` : ''}
         ${won.length ? `<div class="acc-line"><span class="acc-k">Loot</span><span class="loot-list">${won.map(lootChipHtml).join('')}</span></div>` : ''}
       </div>`;
@@ -4693,8 +4761,17 @@ function toggleLoot(td, playerName) {
   h += `<div class="expand-section-title">Loot Received ${loot.length ? `<span style="color:var(--text-dim);letter-spacing:0.05em;">— ${loot.length} item${loot.length === 1 ? '' : 's'} · ${srWins} via SR</span>` : ''}</div>`;
   h += loot.length ? `<div class="loot-list">${loot.map(lootChipHtml).join('')}</div>` : `<em class="no-loot">No loot recorded</em>`;
 
-  // Bad luck protection: every item this raider has lost an SR roll on and not won since
-  if (srRules.blp.enabled) {
+  // Bad luck protection. With a softres raid series it's one bonus per raider (any reserved item);
+  // otherwise every item this raider has lost an SR roll on and not won since.
+  const curSeries = currentSeriesSheet();
+  if (curSeries) {
+    const bonus = softresBonusFor(curSeries, key);
+    const reservedNow = Object.keys(activeRaids().map(r => raidReserves(r)[key] || {}).reduce((a, m) => ({ ...a, ...m }), {}));
+    h += `<div class="expand-section-title" style="margin-top:14px;">Bad Luck Protection <span style="color:var(--text-dim);letter-spacing:0.05em;">— softres series “${escHtml(curSeries.series.name)}”</span></div>`;
+    h += bonus ? `<div class="blp-softres"><span class="blp-boost">+${bonus} roll bonus</span> <span class="iv-dim">/roll 1–${100 + bonus} on ${curSeries.series.reservesOnly ? 'any item they reserve' : 'any roll'}</span>
+        ${reservedNow.length ? `<div class="loot-list" style="margin-top:6px;">${reservedNow.map(ik => `<span class="loot-item blp-chip" title="Reserved this raid — rolls 1–${100 + bonus}">${itemLinkHtml(ik)}</span>`).join('')}</div>` : ''}</div>`
+      : `<em class="no-loot">No roll bonus yet</em>`;
+  } else if (srRules.blp.enabled) {
     const blp = Object.entries(derived().blp.losses[key] || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || itemName(a[0]).localeCompare(itemName(b[0])));
     h += `<div class="expand-section-title" style="margin-top:14px;">Bad Luck Protection ${blp.length ? `<span style="color:var(--text-dim);letter-spacing:0.05em;">— ${blp.length} item${blp.length === 1 ? '' : 's'}</span>` : ''}</div>`;
     h += blp.length ? `<div class="loot-list">${blp.map(([ik, n]) => `<span class="loot-item blp-chip" title="Rolls 1–${rollMax(n)} on this item (lost ${n} SR roll${n === 1 ? '' : 's'})">${itemLinkHtml(ik)}</span>`).join('')}</div>`
@@ -5123,13 +5200,13 @@ function renderLootItemView(el, raid, itemKey) {
     const rows = reservers.map(({ key, count }) => {
       const rp = rosterPlayer(key);
       const name = rp?.name || Object.values(raid.softres.map(s => effectiveReserves(s)[key]).filter(Boolean))[0]?.name || key;
-      const losses = blpLossesBefore(raid.id, key, itemKey);
-      const rm = rollMax(losses);
+      const roll = rollFor(raid, key, itemKey);
+      const losses = roll.losses || 0, rm = roll.max;
       const st = rp ? srStats(rp.name) : null;
       const ev = st?.events.find(e => e.raidId === raid.id);
       const present = attendanceOf(raid, key).present;
       const over = ev?.over > 0;
-      return { key, name, count, losses, rm, present, over, ev, rp, got: alreadyThisRaid.has(key) };
+      return { key, name, count, losses, rm, roll, present, over, ev, rp, got: alreadyThisRaid.has(key) };
     }).sort((a, b) => b.rm - a.rm || a.name.localeCompare(b.name));
     srHtml = `<div class="sr-box ${gearSlots ? 'with-cur' : ''}">
       <div class="gl-col-title">Soft reserved by ${reservers.length}</div>
@@ -5137,7 +5214,7 @@ function renderLootItemView(el, raid, itemKey) {
         <span class="sr-name">${playerNameHtml(r.name)}${r.rp || !writeToken ? '' : ' <span class="tag-warn">not on roster</span>'}</span>
         ${r.count > 1 ? `<span class="sr-multi" title="Reserved ${r.count} times — rolls ${r.count} times">×${r.count}</span>` : '<span></span>'}
         ${gearSlots ? `<span class="sr-cur">${currentGearHtml(r.name, gearSlots)}</span>` : ''}
-        <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
+        <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.roll.source === 'softres' ? (r.roll.bonus ? `Softres bad luck protection: +${r.roll.bonus} (${escHtml(r.roll.series)})` : 'Standard roll — no softres bonus yet') : r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
         <span class="sr-bal">${r.over && writeToken ? `<span class="over-chip" title="Reserved ${r.ev.reserved} SRs this raid but only had ${r.ev.reserved - r.ev.over}">⚠ OVER-RESERVED ${r.ev.reserved}/${r.ev.reserved - r.ev.over}</span>` : ''}
           ${!r.present ? '<span class="tag-warn">not marked present</span>' : ''}${r.got ? '<span class="tag-ok">✓ awarded</span>' : ''}</span>
         <span style="text-align:right;">${r.got ? '' : assignBtn(r.name, true)}</span>
@@ -5230,6 +5307,53 @@ async function removeLoot(raidId, i) {
 }
 
 // ── Reserves ────────────────────────────────────────────────────
+// ── Softres raid series: verification status, absent reservers who still got points, loot cross-check ──
+const _stripRealm = n => String(n || '').split('-')[0];
+function softresResultCheck(raid, s) {
+  if (!s.results) return null;
+  const won = s.results.filter(r => !r.de && r.received);
+  const keyOf = n => resolveRosterKey(_stripRealm(n));
+  const want = {}; for (const r of won) { const k = `${keyOf(r.winner)}|id:${r.item}`; want[k] = (want[k] || 0) + 1; }
+  const have = {}; for (const l of raid.loot) { const k = `${normalizeName(l.recipient)}|${l.itemKey}`; have[k] = (have[k] || 0) + 1; }
+  const missing = Object.entries(want).filter(([k, n]) => (have[k] || 0) < n).map(([k]) => k);
+  const extra = Object.entries(have).filter(([k, n]) => (want[k] || 0) < n).map(([k]) => k);
+  // Reservers who weren't present but didn't receive their item: softres still gives them points
+  const winners = new Set(won.map(r => normalizeName(_stripRealm(r.winner))));
+  const absent = Object.values(effectiveReserves(s)).filter(r => !attendanceOf(raid, r.key).present && !winners.has(normalizeName(r.name)))
+    .map(r => ({ name: r.name, key: r.key, points: (s.series?.reservedItemPoints || 0) * new Set(r.items).size }))
+    .filter(r => r.points > 0);
+  return { won: won.length, missing, extra, absent };
+}
+function seriesSheetHtml(raid, s) {
+  if (!s.series) return '';
+  const verified = s.verifiedAt ? `<span class="tag-ok" title="Loot results imported into softres ${fmtAgo(s.verifiedAt)}">✓ results verified</span>`
+    : raid.status === 'active' ? '<span class="tag-opt">results imported after the raid</span>' : '<span class="tag-warn" title="Import the Gargul post-raid export on softres so bad luck protection counts this raid">awaiting result import</span>';
+  let h = `<div class="series-line">Softres series <a href="https://softres.it/raid-series/${escHtml(s.series.id)}" target="_blank" rel="noopener">“${escHtml(s.series.name)}”</a> · bad luck protection is managed there ${verified}</div>`;
+  const chk = softresResultCheck(raid, s);
+  if (chk && writeToken) {
+    if (!raid.loot.length && chk.won) h += `<div class="series-line">Softres has ${chk.won} awarded item${chk.won === 1 ? '' : 's'} for this raid. <button class="small-gold-btn" onclick="importSoftresLoot('${raid.id}','${s.id}')">IMPORT LOOT</button></div>`;
+    else if (chk.missing.length || chk.extra.length) h += `<div class="warn-banner">Loot differs from the softres results: ${chk.missing.length} missing here, ${chk.extra.length} not in softres. ${chk.missing.length ? `<button class="ghost-btn" onclick="importSoftresLoot('${raid.id}','${s.id}')">Add the missing ones</button>` : ''}</div>`;
+    else if (chk.won) h += `<div class="series-line iv-dim">✓ Loot matches the softres results (${chk.won} items).</div>`;
+    if (chk.absent.length) h += `<div class="warn-banner">Softres gave bad luck points to ${chk.absent.length} reserver${chk.absent.length === 1 ? '' : 's'} who weren't here: ${chk.absent.map(a => `${escHtml(a.name)} (+${a.points})`).join(', ')}. Softres can't see attendance — remove them with a negative adjustment on the <a href="https://softres.it/raid-series/${escHtml(s.series.id)}" target="_blank" rel="noopener">series page</a> if your rules say absent raiders don't earn it.</div>`;
+  }
+  return h;
+}
+async function importSoftresLoot(raidId, sheetId) {
+  const raid = getRaid(raidId), s = raid.softres.find(x => x.id === sheetId); if (!s?.results) return;
+  const res = raidReserves(raid);
+  const have = {}; for (const l of raid.loot) { const k = `${normalizeName(l.recipient)}|${l.itemKey}`; have[k] = (have[k] || 0) + 1; }
+  let added = 0;
+  for (const r of s.results.filter(r => !r.de && r.received)) {
+    const key = resolveRosterKey(_stripRealm(r.winner)), ik = 'id:' + r.item, k = `${key}|${ik}`;
+    if (have[k]) { have[k]--; continue; }
+    raid.loot.push({ id: _uid('l_'), itemKey: ik, name: itemName(ik, r.name), recipient: rosterPlayer(key)?.name || _stripRealm(r.winner), sr: !!res[key]?.[ik], at: r.at ? new Date(r.at * 1000).toISOString() : new Date().toISOString(), source: 'softres' });
+    added++;
+  }
+  await saveRaids().catch(() => {});
+  flash(`Imported ${added} item${added === 1 ? '' : 's'} from softres`);
+  refreshAll();
+}
+
 function renderRaidReserves(el, raid) {
   const sheetHtml = s => {
     const eff = Object.values(effectiveReserves(s)).sort((a, b) => a.name.localeCompare(b.name));
@@ -5247,6 +5371,7 @@ function renderRaidReserves(el, raid) {
       </div>
       ${s.syncError ? `<div class="warn-banner">${escHtml(s.syncError)}</div>` : ''}
       ${s.hidden ? `<div class="warn-banner">This softres raid hides reserves from non-managers, so the list may be empty.</div>` : ''}
+      ${seriesSheetHtml(raid, s)}
       <table class="mini-table"><thead><tr><th>Character</th><th>Reserves</th><th>SRs</th><th></th></tr></thead><tbody>
       ${eff.map(r => {
         const rp = rosterPlayer(r.key);
@@ -5834,6 +5959,22 @@ async function glNotSame(i) {
 // ═════════════════════════════════════════════════════════════════════════════
 // SR Rules
 // ═════════════════════════════════════════════════════════════════════════════
+// Read-only summary of the softres raid series that now runs bad luck protection
+function seriesRulesHtml() {
+  const cur = currentSeriesSheet(); if (!cur) return '';
+  const x = cur.series;
+  const sys = { roll_increase: 'Roll bonus', bonus_reserves: 'Bonus soft reserves', bonus_hard_reserves: 'Bonus hard reserves' }[x.system] || x.system;
+  return `<div class="rule series-rule"><div class="rule-text"><b>Bad luck protection — softres raid series “${escHtml(x.name)}”</b>
+      <span>Managed on softres and shown in game by Gargul. Change these on the <a href="https://softres.it/raid-series/${escHtml(x.id)}/edit" target="_blank" rel="noopener">series settings</a>; the dashboard reads them on every softres sync.</span>
+      <span class="series-facts">${[
+        `${sys}${x.system === 'roll_increase' ? `: +1 roll per ${x.pointsPerRoll} point${x.pointsPerRoll === 1 ? '' : 's'}${x.maxRollBonus ? `, at most +${x.maxRollBonus}` : ''}` : ''}`,
+        `${x.reservedItemPoints} points per reserved item not received${x.repeatPoints ? ` (+${x.repeatPoints} for reserving it again)` : ''}`,
+        x.noLootPoints ? `${x.noLootPoints} points for a raid without loot` : '',
+        x.reservesOnly ? 'bonus only on reserved items' : 'bonus on any roll',
+        x.carryOnFail ? 'points kept until a boosted roll wins' : 'points used up whenever a boost is used',
+      ].filter(Boolean).map(t => `<span>${escHtml(t)}</span>`).join('')}</span></div></div>`;
+}
+
 function renderRulesPanel() {
   const panel = document.getElementById('rulesPanel'); if (!panel) return;
   const r = srRules;
@@ -5848,7 +5989,8 @@ function renderRulesPanel() {
       <div class="rule-ctl">${tog('ruBuffOn', r.buff.enabled)}<input id="ruBuffTh" type="number" min="0" max="100" class="gl-input rule-num" value="${r.buff.threshold}" oninput="rulesDirty()"><span>%</span></div></div>
     <div class="rule"><div class="rule-text"><b>Attendance streak bonus</b><span>+1 SR on every Nth raid in a row (N, 2N, 3N…). Missing a regular raid resets the streak; optional raids never break it but count when attended.</span></div>
       <div class="rule-ctl">${tog('ruStreakOn', r.streak.enabled)}<span>every</span><input id="ruStreakN" type="number" min="1" class="gl-input rule-num" value="${r.streak.every}" oninput="rulesDirty()"><span>raids</span></div></div>
-    <div class="rule"><div class="rule-text"><b>Bad luck protection</b><span>Each time a raider reserves an item and loses it to someone else, their roll for that item grows by this much (100 → 120 → 140…). Resets when they win it. Tracked per item.</span></div>
+    ${seriesRulesHtml()}
+    <div class="rule"><div class="rule-text"><b>Bad luck protection${currentSeriesSheet() ? ' — raids without a softres series' : ''}</b><span>Each time a raider reserves an item and loses it to someone else, their roll for that item grows by this much (100 → 120 → 140…). Resets when they win it. Tracked per item.${currentSeriesSheet() ? ' Only used for raids whose softres sheet isn\'t in a raid series.' : ''}</span></div>
       <div class="rule-ctl">${tog('ruBlpOn', r.blp.enabled)}<span>+</span><input id="ruBlpStep" type="number" min="0" class="gl-input rule-num" value="${r.blp.step}" oninput="rulesDirty()"><span>per loss</span></div></div>
     <div style="display:flex;gap:8px;margin-top:18px;" class="write-gated-hide">
       <button id="ruSave" class="gloss-btn-saveable small-gold-btn" onclick="saveRulesFromForm()">SAVE RULES</button>
@@ -5909,6 +6051,16 @@ function ivOpenItem(key) {
 
 // Everyone whose next roll on this item is boosted, highest roll first
 function blpHoldersFor(itemKey) {
+  // Softres series: the bonus is per raider and applies to whatever they reserve, so the people who
+  // matter for this item are the ones who reserved it on the current series sheet.
+  const cur = currentSeriesSheet();
+  if (cur) {
+    const raid = raidsData.raids.find(r => r.softres.includes(cur));
+    return Object.entries(raidReserves(raid)).filter(([, m]) => m[itemKey]).map(([pk]) => {
+      const bonus = softresBonusFor(cur, pk);
+      return { pk, bonus, softres: true, name: rosterPlayer(pk)?.name || softresNameFor(cur, pk), roll: 100 + bonus };
+    }).sort((a, b) => b.roll - a.roll || a.name.localeCompare(b.name));
+  }
   if (!srRules.blp.enabled) return [];
   return Object.entries(derived().blp.losses).map(([pk, m]) => ({ pk, losses: m[itemKey] || 0 })).filter(x => x.losses > 0)
     .map(x => ({ ...x, name: rosterPlayer(x.pk)?.name || canonicalNames?.[x.pk] || x.pk, roll: rollMax(x.losses) }))
@@ -5923,7 +6075,7 @@ function itemHistory(itemKey) {
     const reservers = Object.entries(res).filter(([, m]) => m[itemKey]).map(([pk, m]) => {
       const name = rosterPlayer(pk)?.name || r.softres.map(s => effectiveReserves(s)[pk]?.name).find(Boolean) || pk;
       const losses = before[r.id]?.[pk]?.[itemKey] || 0;
-      return { pk, name, count: m[itemKey], roll: rollMax(losses), outcome: outcome[r.id]?.[pk]?.[itemKey] || (r.status === 'active' ? 'pending' : 'nodrop') };
+      return { pk, name, count: m[itemKey], roll: rollFor(r, pk, itemKey).max, outcome: outcome[r.id]?.[pk]?.[itemKey] || (r.status === 'active' ? 'pending' : 'nodrop') };
     }).sort((a, b) => b.roll - a.roll || a.name.localeCompare(b.name));
     const loot = r.loot.filter(l => l.itemKey === itemKey);
     if (reservers.length || loot.length) rows.push({ raid: r, reservers, loot });
@@ -5946,7 +6098,9 @@ function renderItemsPanel() {
 
   // Badges for the item list: how many raiders hold BLP on it, and how often it's dropped
   const blpCount = {}, dropped = {};
-  for (const m of Object.values(derived().blp.losses)) for (const [k, n] of Object.entries(m)) if (n > 0) blpCount[k] = (blpCount[k] || 0) + 1;
+  const curS = currentSeriesSheet();
+  if (curS) { const raid = raidsData.raids.find(r => r.softres.includes(curS)); for (const [pk, m] of Object.entries(raidReserves(raid))) if (softresBonusFor(curS, pk)) for (const k of Object.keys(m)) blpCount[k] = (blpCount[k] || 0) + 1; }
+  else for (const m of Object.values(derived().blp.losses)) for (const [k, n] of Object.entries(m)) if (n > 0) blpCount[k] = (blpCount[k] || 0) + 1;
   for (const r of raidsData.raids) for (const l of r.loot) dropped[l.itemKey] = (dropped[l.itemKey] || 0) + 1;
   const srCount = {}; // every SR ever placed on the item (double reserves count twice)
   for (const r of raidsData.raids) for (const m of Object.values(raidReserves(r))) for (const [k, n] of Object.entries(m)) srCount[k] = (srCount[k] || 0) + n;
@@ -5970,7 +6124,7 @@ function renderItemsPanel() {
         const it = glossary.items[k] || {};
         return `<div class="iv-row${k === _iv.item ? ' selected' : ''}" onclick="ivSelect('item','${jsAttr(k)}')">
           ${itemIconSmall(k)}<span class="iv-row-name">${escHtml(itemName(k))}${it.slot ? `<span class="iv-row-slot">${escHtml(it.slot)}</span>` : ''}</span>
-          ${blpCount[k] ? `<span class="iv-badge blp" title="${blpCount[k]} raider${blpCount[k] === 1 ? ' has' : 's have'} bad luck protection on this item">▲ ${blpCount[k]}</span>` : ''}
+          ${blpCount[k] ? `<span class="iv-badge blp" title="${curS ? `${blpCount[k]} reserver${blpCount[k] === 1 ? ' has' : 's have'} a softres roll bonus` : `${blpCount[k]} raider${blpCount[k] === 1 ? ' has' : 's have'} bad luck protection on this item`}">▲ ${blpCount[k]}</span>` : ''}
           ${srCount[k] ? `<span class="iv-badge sr" title="${srCount[k]} SR${srCount[k] === 1 ? '' : 's'} placed on this item">★ ${srCount[k]}</span>` : ''}
           ${dropped[k] ? `<span class="iv-badge" title="Dropped ${dropped[k]}×">${dropped[k]}×</span>` : ''}</div>`;
       }).join('') : '<div class="gl-empty">No items for this boss.</div>'}</div></div>
@@ -5994,10 +6148,18 @@ function itemDetailHtml(key) {
   const srWins = hist.reduce((a, h) => a + h.loot.filter(l => l.sr).length, 0);
   const reserves = hist.reduce((a, h) => a + h.reservers.reduce((x, r) => x + r.count, 0), 0);
 
-  const blpHtml = !srRules.blp.enabled ? '<div class="gl-empty">Bad luck protection is turned off in the SR rules.</div>'
+  const cur = currentSeriesSheet();
+  const blpHtml = cur
+    ? (holders.length ? `<div class="iv-sub iv-dim" style="margin-bottom:6px;">Reserved on the current sheet · bonuses from softres series “${escHtml(cur.series.name)}”, usable on any reserved item</div>
+        <div class="iv-blp">${holders.map(h => `<div class="iv-blp-row">
+        <span class="iv-blp-name">${playerNameHtml(h.name)}</span>
+        <span class="${h.bonus ? 'blp-boost' : 'iv-dim'}">/roll 1–${h.roll}</span>
+        <span class="iv-dim">${h.bonus ? `+${h.bonus} bonus` : 'no bonus yet'}</span></div>`).join('')}</div>`
+      : `<div class="gl-empty">No one has reserved this on the current sheet. Softres bonuses apply to whatever a raider reserves.</div>`)
+    : !srRules.blp.enabled ? '<div class="gl-empty">Bad luck protection is turned off in the SR rules.</div>'
     : holders.length ? `<div class="iv-blp">${holders.map(h => `<div class="iv-blp-row">
         <span class="iv-blp-name">${playerNameHtml(h.name)}</span>
-        <span class="blp-boost">/roll ${h.roll}</span>
+        <span class="blp-boost">/roll 1–${h.roll}</span>
         <span class="iv-dim">lost ${h.losses} SR roll${h.losses === 1 ? '' : 's'}</span></div>`).join('')}</div>`
     : '<div class="gl-empty">No one has bad luck protection on this item.</div>';
 
@@ -6023,7 +6185,7 @@ function itemDetailHtml(key) {
       <div><b>${reserves}</b><span>SR${reserves === 1 ? '' : 's'} placed</span></div>
       <div><b>${drops}</b><span>dropped</span></div>
       <div><b>${srWins}</b><span>won via SR</span></div>
-      <div><b>${holders.length}</b><span>with BLP</span></div>
+      <div><b>${cur ? holders.filter(h => h.bonus).length : holders.length}</b><span>${cur ? 'boosted reservers' : 'with BLP'}</span></div>
     </div>
     <div class="expand-section-title">Bad Luck Protection</div>
     ${blpHtml}
@@ -6042,6 +6204,11 @@ const DEMO_MC_INSTANCE = {"id":2,"slug":"mc","name":"Molten Core","boss_order":[
 // without 150 network calls. Recipe items have no type (their tooltips describe
 // the crafted item, not themselves).
 const DEMO_MC_WOWHEAD = {"1728":["Sword","inv_sword_22"],"16665":["","inv_misc_book_11"],"16795":["Cloth","inv_helmet_53"],"16796":["Cloth","inv_pants_08"],"16797":["Cloth","inv_shoulder_02"],"16798":["Cloth","inv_chest_cloth_03"],"16799":["Cloth","inv_belt_29"],"16800":["Cloth","inv_boots_07"],"16801":["Cloth","inv_gauntlets_14"],"16802":["Cloth","inv_belt_30"],"16803":["Cloth","inv_boots_cloth_05"],"16804":["Cloth","inv_bracer_07"],"16805":["Cloth","inv_gauntlets_19"],"16806":["Cloth","inv_belt_13"],"16807":["Cloth","inv_shoulder_23"],"16808":["Cloth","inv_helmet_08"],"16809":["Cloth","inv_chest_cloth_09"],"16810":["Cloth","inv_pants_cloth_14"],"16811":["Cloth","inv_boots_07"],"16812":["Cloth","inv_gauntlets_14"],"16813":["Cloth","inv_helmet_34"],"16814":["Cloth","inv_pants_08"],"16815":["Cloth","inv_chest_cloth_03"],"16816":["Cloth","inv_shoulder_02"],"16817":["Cloth","inv_belt_22"],"16819":["Cloth","inv_bracer_09"],"16820":["Leather","inv_chest_cloth_07"],"16821":["Leather","inv_helmet_41"],"16822":["Leather","inv_pants_06"],"16823":["Leather","inv_shoulder_25"],"16824":["Leather","inv_boots_08"],"16825":["Leather","inv_bracer_02"],"16826":["Leather","inv_gauntlets_21"],"16827":["Leather","inv_belt_23"],"16828":["Leather","inv_belt_06"],"16829":["Leather","inv_boots_08"],"16830":["Leather","inv_bracer_03"],"16831":["Leather","inv_gauntlets_07"],"16833":["Leather","inv_chest_cloth_06"],"16834":["Leather","inv_helmet_09"],"16835":["Leather","inv_pants_06"],"16836":["Leather","inv_shoulder_07"],"16837":["Mail","inv_boots_plate_06"],"16838":["Mail","inv_belt_14"],"16839":["Mail","inv_gauntlets_11"],"16840":["Mail","inv_bracer_16"],"16841":["Mail","inv_chest_chain_11"],"16842":["Mail","inv_helmet_09"],"16843":["Mail","inv_pants_03"],"16844":["Mail","inv_shoulder_29"],"16845":["Mail","inv_chest_chain_03"],"16846":["Mail","inv_helmet_05"],"16847":["Mail","inv_pants_mail_03"],"16848":["Mail","inv_shoulder_10"],"16849":["Mail","inv_boots_chain_13"],"16850":["Mail","inv_bracer_17"],"16851":["Mail","inv_belt_28"],"16852":["Mail","inv_gauntlets_10"],"16853":["Plate","inv_chest_plate03"],"16854":["Plate","inv_helmet_05"],"16855":["Plate","inv_pants_04"],"16856":["Plate","inv_shoulder_20"],"16857":["Plate","inv_bracer_18"],"16858":["Plate","inv_belt_27"],"16859":["Plate","inv_boots_plate_09"],"16860":["Plate","inv_gauntlets_29"],"16861":["Plate","inv_bracer_19"],"16862":["Plate","inv_boots_plate_04"],"16863":["Plate","inv_gauntlets_10"],"16864":["Plate","inv_belt_09"],"16865":["Plate","inv_chest_plate16"],"16866":["Plate","inv_helmet_09"],"16867":["Plate","inv_pants_04"],"16868":["Plate","inv_shoulder_15"],"16901":["Leather","inv_pants_06"],"16909":["Leather","inv_pants_06"],"16915":["Cloth","inv_pants_08"],"16922":["Cloth","inv_pants_08"],"16930":["Cloth","inv_pants_07"],"16938":["Mail","inv_pants_03"],"16946":["Mail","inv_pants_03"],"16954":["Plate","inv_pants_04"],"16962":["Plate","inv_pants_04"],"17010":["","spell_fire_flamebolt"],"17011":["","spell_nature_earthquake"],"17063":["","inv_jewelry_ring_15"],"17065":["","inv_jewelry_amulet_03"],"17066":["Shield","inv_shield_10"],"17069":["Bow","inv_weapon_bow_08"],"17071":["Dagger","inv_weapon_shortblade_18"],"17072":["Gun","inv_weapon_rifle_09"],"17073":["Mace","inv_hammer_04"],"17074":["Polearm","inv_spear_08"],"17076":["Sword","inv_sword_12"],"17077":["Wand","inv_staff_13"],"17082":["","inv_misc_orb_05"],"17102":["","inv_misc_cape_17"],"17103":["Sword","inv_sword_39"],"17104":["Axe","inv_axe_09"],"17105":["Mace","inv_hammer_05"],"17106":["Shield","inv_shield_08"],"17107":["","inv_misc_cape_08"],"17109":["","inv_jewelry_necklace_10"],"17110":["","inv_jewelry_ring_21"],"17203":["","spell_fire_sealoffire"],"17204":["","inv_misc_gem_pearl_05"],"18203":["Fist Weapon","inv_misc_monsterclaw_04"],"18563":["","spell_ice_lament"],"18564":["","spell_ice_lament"],"18646":["","spell_holy_mindsooth"],"18703":["","spell_nature_resistnature"],"18803":["Mace","inv_gizmo_02"],"18805":["Dagger","inv_weapon_shortblade_11"],"18806":["Plate","inv_boots_plate_09"],"18808":["Cloth","inv_gauntlets_03"],"18809":["Cloth","inv_belt_12"],"18810":["Leather","inv_shoulder_18"],"18811":["","inv_misc_cape_18"],"18812":["Mail","inv_bracer_02"],"18814":["","inv_jewelry_amulet_05"],"18815":["","spell_fire_fire"],"18816":["Dagger","inv_sword_48"],"18817":["Mail","inv_crown_02"],"18820":["","inv_misc_stonetablet_11"],"18821":["","inv_jewelry_ring_07"],"18822":["Sword","inv_sword_28"],"18823":["Leather","inv_gauntlets_23"],"18824":["Plate","inv_boots_plate_08"],"18829":["Mail","inv_shoulder_04"],"18832":["Sword","inv_sword_15"],"18842":["Staff","inv_staff_13"],"18861":["Plate","inv_pants_04"],"18870":["Mail","inv_helmet_18"],"18872":["Cloth","inv_pants_08"],"18875":["Leather","inv_pants_12"],"18878":["Dagger","inv_weapon_shortblade_07"],"18879":["","inv_jewelry_ring_14"],"19017":["","spell_fire_selfdestruct"],"19136":["Cloth","inv_belt_11"],"19137":["Plate","inv_belt_29"],"19138":["","inv_jewelry_ring_36"],"19139":["Leather","inv_shoulder_23"],"19140":["","inv_jewelry_ring_39"],"19142":["Held In Off-hand","inv_misc_book_09"],"19143":["Plate","inv_gauntlets_26"],"19144":["Mail","inv_boots_chain_05"],"19145":["Cloth","inv_chest_cloth_18"],"19146":["Leather","inv_bracer_04"],"19147":["","inv_jewelry_ring_38"],"20951":["","inv_helmet_47"],"21110":["","inv_misc_stonetablet_03"]};
+
+// Frozen demo fixture. The "WF demo" raid series on softres.it was seeded ONCE from this exact
+// data (sheets use each raider's first name, since softres allows 12 characters). Don't edit it
+// unless you also re-seed softres; generateDemoData() only ever re-applies it.
+const DEMO_FIXTURE = {"version":1,"builtAt":"2026-10-06T20:52:37.215Z","seriesName":"WF demo","instance":"Molten Core (Classic)","players":[{"name":"Bunzypoo Frostmantle","role":"Tanks","class":"Paladin","spec":66},{"name":"Scarlypoo Starfall","role":"Tanks","class":"Warrior","spec":73},{"name":"Scottypoo Dawnforge","role":"Tanks","class":"Druid","spec":103},{"name":"Cythrawl Nightbloom","role":"Physical DPS","class":"Rogue","spec":260},{"name":"Arcturrax Fjördmark","role":"Ranged DPS","class":"Hunter","spec":254},{"name":"Hinya Wolfsbane","role":"Ranged DPS","class":"Hunter","spec":254},{"name":"Lullzz Blackthorn","role":"Ranged DPS","class":"Druid","spec":102},{"name":"Manedic Ironbrand","role":"Ranged DPS","class":"Priest","spec":258},{"name":"Mayous Goldmane","role":"Ranged DPS","class":"Warlock","spec":265,"srAdjustments":[{"date":"2026-08-20","delta":2,"note":"Demo: carried over from a previous guild"}]},{"name":"Shadöwheârt Highpeak","role":"Ranged DPS","class":"Warlock","spec":265},{"name":"Tilton Grimshade","role":"Ranged DPS","class":"Warlock","spec":265},{"name":"Padreanton Silverleaf","role":"Healers","class":"Priest","spec":257},{"name":"Shuuko Ashenvale","role":"Physical DPS","class":"Warrior","spec":72},{"name":"Starstrucker Shadowmere","role":"Healers","class":"Shaman","spec":264},{"name":"Izolahunt Kælgrim","role":"Ranged DPS","class":"Hunter","spec":254},{"name":"Kælstorm Sunstrider","role":"Physical DPS","class":"Shaman","spec":263},{"name":"Fizzlé Stormwind","role":"Ranged DPS","class":"Mage","spec":63},{"name":"Dixianna Æstrand","role":"Healers","class":"Paladin","spec":65},{"name":"Sycamoore Thornhollow","role":"Healers","class":"Druid","spec":105},{"name":"Khaldren Windrunner","role":"Healers","class":"Priest","spec":257},{"name":"Foxwillcry Ravencrest","role":"Physical DPS","class":"Paladin","spec":70},{"name":"Dêmz Oakenshield","role":"Healers","class":"Shaman","spec":264},{"name":"Toorighteous Emberheart","role":"Physical DPS","class":"Paladin","spec":70},{"name":"Mythcat Gravemoor","role":"Physical DPS","class":"Druid","spec":103},{"name":"Aragorrn Stonehelm","role":"Physical DPS","class":"Warrior","spec":72},{"name":"Koorva Duskwhisper","role":"Ranged DPS","class":"Mage","spec":63},{"name":"Riins Mistwalker","role":"Ranged DPS","class":"Warlock","spec":265}],"raids":[{"key":"r1","name":"Molten Core","date":"2026-09-01","optional":false,"present":["Bunzypoo Frostmantle","Scarlypoo Starfall","Scottypoo Dawnforge","Cythrawl Nightbloom","Arcturrax Fjördmark","Lullzz Blackthorn","Manedic Ironbrand","Mayous Goldmane","Shadöwheârt Highpeak","Tilton Grimshade","Padreanton Silverleaf","Shuuko Ashenvale","Starstrucker Shadowmere","Izolahunt Kælgrim","Kælstorm Sunstrider","Fizzlé Stormwind","Dixianna Æstrand","Sycamoore Thornhollow","Khaldren Windrunner","Foxwillcry Ravencrest","Dêmz Oakenshield","Aragorrn Stonehelm","Koorva Duskwhisper","Riins Mistwalker"],"reserves":[{"name":"Bunzypoo Frostmantle","items":[17063]},{"name":"Scarlypoo Starfall","items":[17063]},{"name":"Scottypoo Dawnforge","items":[17063]},{"name":"Cythrawl Nightbloom","items":[17063]},{"name":"Arcturrax Fjördmark","items":[16849]},{"name":"Lullzz Blackthorn","items":[16836]},{"name":"Manedic Ironbrand","items":[18809]},{"name":"Mayous Goldmane","items":[17065]},{"name":"Shadöwheârt Highpeak","items":[16809]},{"name":"Tilton Grimshade","items":[17204]},{"name":"Padreanton Silverleaf","items":[19147]},{"name":"Shuuko Ashenvale","items":[17103]},{"name":"Starstrucker Shadowmere","items":[18875]},{"name":"Izolahunt Kælgrim","items":[18564]},{"name":"Kælstorm Sunstrider","items":[17082]},{"name":"Fizzlé Stormwind","items":[19136]},{"name":"Dixianna Æstrand","items":[17107]},{"name":"Sycamoore Thornhollow","items":[18842]},{"name":"Khaldren Windrunner","items":[18879]},{"name":"Foxwillcry Ravencrest","items":[18842]},{"name":"Dêmz Oakenshield","items":[18820]},{"name":"Aragorrn Stonehelm","items":[18810]},{"name":"Koorva Duskwhisper","items":[17109]},{"name":"Riins Mistwalker","items":[17073]},{"name":"Hinya Wolfsbane","items":[19142]}],"loot":[{"item":18875,"to":"Starstrucker Shadowmere","sr":true,"boss":"Lucifron"},{"item":19147,"to":"Padreanton Silverleaf","sr":true,"boss":"Lucifron"},{"item":16867,"to":"Aragorrn Stonehelm","sr":false,"boss":"Magmadar"},{"item":19136,"to":"Fizzlé Stormwind","sr":true,"boss":"Magmadar"},{"item":16849,"to":"Arcturrax Fjördmark","sr":true,"boss":"Gehennas"},{"item":16862,"to":"||de||","sr":false,"boss":"Gehennas"},{"item":18564,"to":"Izolahunt Kælgrim","sr":true,"boss":"Garr"},{"item":18823,"to":"Arcturrax Fjördmark","sr":false,"boss":"Garr"},{"item":19147,"to":"Sycamoore Thornhollow","sr":false,"boss":"Shazzrah"},{"item":18875,"to":"Cythrawl Nightbloom","sr":false,"boss":"Shazzrah"},{"item":19136,"to":"Manedic Ironbrand","sr":false,"boss":"Baron Geddon"},{"item":18820,"to":"Dêmz Oakenshield","sr":true,"boss":"Baron Geddon"},{"item":18879,"to":"Khaldren Windrunner","sr":true,"boss":"Sulfuron Harbinger"},{"item":18875,"to":"Dixianna Æstrand","sr":false,"boss":"Sulfuron Harbinger"},{"item":18842,"to":"Sycamoore Thornhollow","sr":true,"boss":"Golemagg the Incinerator"},{"item":18820,"to":"||de||","sr":false,"boss":"Golemagg the Incinerator"},{"item":18703,"to":"Arcturrax Fjördmark","sr":false,"boss":"Majordomo Executus"},{"item":18809,"to":"Manedic Ironbrand","sr":true,"boss":"Majordomo Executus"},{"item":18817,"to":"||de||","sr":false,"boss":"Ragnaros"},{"item":19138,"to":"Starstrucker Shadowmere","sr":false,"boss":"Ragnaros"},{"item":17204,"to":"Tilton Grimshade","sr":true,"boss":"Ragnaros"}],"cla":{"Bunzypoo Frostmantle":[50,100,100,0],"Scarlypoo Starfall":[100,0,100,100],"Scottypoo Dawnforge":[50,0,100,100],"Cythrawl Nightbloom":[50,100,100,100],"Arcturrax Fjördmark":[100,100,100,0],"Lullzz Blackthorn":[100,100,100,100],"Manedic Ironbrand":[100,100,0,100],"Mayous Goldmane":[100,0,100,0],"Shadöwheârt Highpeak":[100,100,0,100],"Tilton Grimshade":[100,0,0,0],"Padreanton Silverleaf":[100,0,0,0],"Shuuko Ashenvale":[100,100,0,100],"Starstrucker Shadowmere":[100,0,100,100],"Izolahunt Kælgrim":[100,100,100,100],"Kælstorm Sunstrider":[100,100,100,100],"Fizzlé Stormwind":[50,100,100,0],"Dixianna Æstrand":[50,100,100,0],"Sycamoore Thornhollow":[50,100,0,0],"Khaldren Windrunner":[100,100,0,100],"Foxwillcry Ravencrest":[100,100,100,100],"Dêmz Oakenshield":[100,100,100,0],"Aragorrn Stonehelm":[100,100,0,0],"Koorva Duskwhisper":[100,100,100,100],"Riins Mistwalker":[100,100,0,100]}},{"key":"r2","name":"Molten Core","date":"2026-09-08","optional":false,"present":["Bunzypoo Frostmantle","Scottypoo Dawnforge","Cythrawl Nightbloom","Arcturrax Fjördmark","Hinya Wolfsbane","Lullzz Blackthorn","Mayous Goldmane","Shadöwheârt Highpeak","Tilton Grimshade","Padreanton Silverleaf","Shuuko Ashenvale","Starstrucker Shadowmere","Izolahunt Kælgrim","Kælstorm Sunstrider","Fizzlé Stormwind","Dixianna Æstrand","Sycamoore Thornhollow","Foxwillcry Ravencrest","Dêmz Oakenshield","Mythcat Gravemoor","Aragorrn Stonehelm","Riins Mistwalker"],"reserves":[{"name":"Bunzypoo Frostmantle","items":[17063]},{"name":"Scottypoo Dawnforge","items":[17063]},{"name":"Cythrawl Nightbloom","items":[17063]},{"name":"Arcturrax Fjördmark","items":[18829]},{"name":"Hinya Wolfsbane","items":[19142]},{"name":"Lullzz Blackthorn","items":[16836]},{"name":"Mayous Goldmane","items":[17065]},{"name":"Shadöwheârt Highpeak","items":[16809]},{"name":"Tilton Grimshade","items":[21110]},{"name":"Padreanton Silverleaf","items":[16816]},{"name":"Shuuko Ashenvale","items":[17103]},{"name":"Starstrucker Shadowmere","items":[17065]},{"name":"Izolahunt Kælgrim","items":[18814]},{"name":"Kælstorm Sunstrider","items":[17082]},{"name":"Fizzlé Stormwind","items":[17076]},{"name":"Dixianna Æstrand","items":[17107]},{"name":"Sycamoore Thornhollow","items":[17065]},{"name":"Foxwillcry Ravencrest","items":[18842]},{"name":"Dêmz Oakenshield","items":[18812]},{"name":"Mythcat Gravemoor","items":[17065]},{"name":"Aragorrn Stonehelm","items":[18810]},{"name":"Riins Mistwalker","items":[17073]},{"name":"Scarlypoo Starfall","items":[17063]}],"loot":[{"item":18879,"to":"Cythrawl Nightbloom","sr":false,"boss":"Lucifron"},{"item":18875,"to":"Shuuko Ashenvale","sr":false,"boss":"Lucifron"},{"item":17073,"to":"Riins Mistwalker","sr":true,"boss":"Magmadar"},{"item":19142,"to":"Hinya Wolfsbane","sr":true,"boss":"Magmadar"},{"item":16849,"to":"Izolahunt Kælgrim","sr":false,"boss":"Gehennas"},{"item":17077,"to":"Mayous Goldmane","sr":false,"boss":"Gehennas"},{"item":19144,"to":"Foxwillcry Ravencrest","sr":false,"boss":"Garr"},{"item":18564,"to":"Arcturrax Fjördmark","sr":false,"boss":"Garr"},{"item":16811,"to":"Padreanton Silverleaf","sr":false,"boss":"Shazzrah"},{"item":19145,"to":"Shuuko Ashenvale","sr":false,"boss":"Shazzrah"},{"item":18829,"to":"Arcturrax Fjördmark","sr":true,"boss":"Baron Geddon"},{"item":19142,"to":"Cythrawl Nightbloom","sr":false,"boss":"Baron Geddon"},{"item":16816,"to":"Padreanton Silverleaf","sr":true,"boss":"Sulfuron Harbinger"},{"item":19146,"to":"Dixianna Æstrand","sr":false,"boss":"Sulfuron Harbinger"},{"item":17103,"to":"Shuuko Ashenvale","sr":true,"boss":"Golemagg the Incinerator"},{"item":16809,"to":"Shadöwheârt Highpeak","sr":true,"boss":"Golemagg the Incinerator"},{"item":18810,"to":"Aragorrn Stonehelm","sr":true,"boss":"Majordomo Executus"},{"item":18812,"to":"Dêmz Oakenshield","sr":true,"boss":"Majordomo Executus"},{"item":19137,"to":"Shuuko Ashenvale","sr":false,"boss":"Ragnaros"},{"item":16954,"to":"Dixianna Æstrand","sr":false,"boss":"Ragnaros"},{"item":17063,"to":"Bunzypoo Frostmantle","sr":true,"boss":"Ragnaros"}],"cla":{"Bunzypoo Frostmantle":[100,100,100,100],"Scottypoo Dawnforge":[50,100,0,0],"Cythrawl Nightbloom":[100,100,100,100],"Arcturrax Fjördmark":[50,100,100,100],"Hinya Wolfsbane":[100,100,100,100],"Lullzz Blackthorn":[100,100,100,0],"Mayous Goldmane":[100,0,100,100],"Shadöwheârt Highpeak":[100,100,100,100],"Tilton Grimshade":[100,0,100,100],"Padreanton Silverleaf":[100,100,100,0],"Shuuko Ashenvale":[100,100,100,100],"Starstrucker Shadowmere":[100,100,100,100],"Izolahunt Kælgrim":[50,100,0,100],"Kælstorm Sunstrider":[100,100,100,0],"Fizzlé Stormwind":[100,100,100,100],"Dixianna Æstrand":[100,100,100,100],"Sycamoore Thornhollow":[100,100,100,100],"Foxwillcry Ravencrest":[100,100,0,100],"Dêmz Oakenshield":[50,100,100,100],"Mythcat Gravemoor":[50,100,100,100],"Aragorrn Stonehelm":[50,100,100,0],"Riins Mistwalker":[100,100,100,0]}},{"key":"r3","name":"Molten Core (optional reclear)","date":"2026-09-15","optional":true,"present":["Bunzypoo Frostmantle","Cythrawl Nightbloom","Lullzz Blackthorn","Manedic Ironbrand","Tilton Grimshade","Shuuko Ashenvale","Starstrucker Shadowmere","Fizzlé Stormwind","Dixianna Æstrand","Sycamoore Thornhollow","Foxwillcry Ravencrest","Dêmz Oakenshield","Aragorrn Stonehelm"],"reserves":[{"name":"Bunzypoo Frostmantle","items":[17082]},{"name":"Cythrawl Nightbloom","items":[17063]},{"name":"Lullzz Blackthorn","items":[16836]},{"name":"Manedic Ironbrand","items":[17109]},{"name":"Tilton Grimshade","items":[21110]},{"name":"Shuuko Ashenvale","items":[16867]},{"name":"Starstrucker Shadowmere","items":[17065]},{"name":"Fizzlé Stormwind","items":[17076]},{"name":"Dixianna Æstrand","items":[17107]},{"name":"Sycamoore Thornhollow","items":[17065]},{"name":"Foxwillcry Ravencrest","items":[18842]},{"name":"Dêmz Oakenshield","items":[17082]},{"name":"Aragorrn Stonehelm","items":[18808]},{"name":"Scarlypoo Starfall","items":[17063]}],"loot":[{"item":16829,"to":"Lullzz Blackthorn","sr":false,"boss":"Lucifron"},{"item":17109,"to":"Manedic Ironbrand","sr":true,"boss":"Lucifron"},{"item":17065,"to":"Starstrucker Shadowmere","sr":true,"boss":"Magmadar"},{"item":16867,"to":"Shuuko Ashenvale","sr":true,"boss":"Magmadar"},{"item":16860,"to":"Foxwillcry Ravencrest","sr":false,"boss":"Gehennas"},{"item":19145,"to":"Dixianna Æstrand","sr":false,"boss":"Gehennas"},{"item":17066,"to":"||de||","sr":false,"boss":"Garr"},{"item":18861,"to":"Aragorrn Stonehelm","sr":false,"boss":"Garr"},{"item":18872,"to":"Dêmz Oakenshield","sr":false,"boss":"Shazzrah"},{"item":19145,"to":"Starstrucker Shadowmere","sr":false,"boss":"Shazzrah"},{"item":16807,"to":"Tilton Grimshade","sr":false,"boss":"Baron Geddon"},{"item":16836,"to":"Lullzz Blackthorn","sr":true,"boss":"Baron Geddon"},{"item":18872,"to":"Bunzypoo Frostmantle","sr":false,"boss":"Sulfuron Harbinger"},{"item":18861,"to":"Dixianna Æstrand","sr":false,"boss":"Sulfuron Harbinger"},{"item":18842,"to":"Foxwillcry Ravencrest","sr":true,"boss":"Golemagg the Incinerator"},{"item":19144,"to":"Shuuko Ashenvale","sr":false,"boss":"Golemagg the Incinerator"},{"item":18808,"to":"Aragorrn Stonehelm","sr":true,"boss":"Majordomo Executus"},{"item":19139,"to":"Aragorrn Stonehelm","sr":false,"boss":"Majordomo Executus"},{"item":17106,"to":"||de||","sr":false,"boss":"Ragnaros"},{"item":21110,"to":"Tilton Grimshade","sr":true,"boss":"Ragnaros"},{"item":17082,"to":"Dêmz Oakenshield","sr":true,"boss":"Ragnaros"}],"cla":{"Bunzypoo Frostmantle":[50,100,0,100],"Cythrawl Nightbloom":[100,0,0,100],"Lullzz Blackthorn":[100,100,100,0],"Manedic Ironbrand":[100,100,0,100],"Tilton Grimshade":[100,100,100,100],"Shuuko Ashenvale":[100,100,0,100],"Starstrucker Shadowmere":[100,100,100,100],"Fizzlé Stormwind":[100,0,100,0],"Dixianna Æstrand":[100,0,100,100],"Sycamoore Thornhollow":[50,100,0,100],"Foxwillcry Ravencrest":[100,0,0,0],"Dêmz Oakenshield":[100,0,0,0],"Aragorrn Stonehelm":[100,100,0,100]}},{"key":"r4","name":"Molten Core","date":"2026-09-22","optional":false,"present":["Bunzypoo Frostmantle","Scarlypoo Starfall","Scottypoo Dawnforge","Cythrawl Nightbloom","Arcturrax Fjördmark","Hinya Wolfsbane","Lullzz Blackthorn","Manedic Ironbrand","Mayous Goldmane","Tilton Grimshade","Padreanton Silverleaf","Shuuko Ashenvale","Izolahunt Kælgrim","Kælstorm Sunstrider","Dixianna Æstrand","Khaldren Windrunner","Foxwillcry Ravencrest","Dêmz Oakenshield","Aragorrn Stonehelm"],"reserves":[{"name":"Bunzypoo Frostmantle","items":[17082]},{"name":"Scarlypoo Starfall","items":[17063]},{"name":"Scottypoo Dawnforge","items":[17063]},{"name":"Cythrawl Nightbloom","items":[17063]},{"name":"Arcturrax Fjördmark","items":[19146]},{"name":"Hinya Wolfsbane","items":[16845]},{"name":"Lullzz Blackthorn","items":[17104]},{"name":"Manedic Ironbrand","items":[17076]},{"name":"Mayous Goldmane","items":[17065]},{"name":"Tilton Grimshade","items":[17071]},{"name":"Padreanton Silverleaf","items":[18872]},{"name":"Shuuko Ashenvale","items":[19136]},{"name":"Izolahunt Kælgrim","items":[18814]},{"name":"Kælstorm Sunstrider","items":[17082]},{"name":"Dixianna Æstrand","items":[17107]},{"name":"Khaldren Windrunner","items":[18814]},{"name":"Foxwillcry Ravencrest","items":[17203]},{"name":"Dêmz Oakenshield","items":[17102]},{"name":"Aragorrn Stonehelm","items":[18822]},{"name":"Shadöwheârt Highpeak","items":[18821]}],"loot":[{"item":19146,"to":"Arcturrax Fjördmark","sr":true,"boss":"Lucifron"},{"item":16800,"to":"||de||","sr":false,"boss":"Lucifron"},{"item":18822,"to":"Aragorrn Stonehelm","sr":true,"boss":"Magmadar"},{"item":19136,"to":"Shuuko Ashenvale","sr":true,"boss":"Magmadar"},{"item":19146,"to":"Foxwillcry Ravencrest","sr":false,"boss":"Gehennas"},{"item":18872,"to":"Padreanton Silverleaf","sr":true,"boss":"Gehennas"},{"item":19144,"to":"||de||","sr":false,"boss":"Garr"},{"item":18564,"to":"Bunzypoo Frostmantle","sr":false,"boss":"Garr"},{"item":19146,"to":"Shuuko Ashenvale","sr":false,"boss":"Shazzrah"},{"item":18872,"to":"Scarlypoo Starfall","sr":false,"boss":"Shazzrah"},{"item":19143,"to":"Foxwillcry Ravencrest","sr":false,"boss":"Baron Geddon"},{"item":19136,"to":"Dêmz Oakenshield","sr":false,"boss":"Baron Geddon"},{"item":16823,"to":"Cythrawl Nightbloom","sr":false,"boss":"Sulfuron Harbinger"},{"item":19147,"to":"Khaldren Windrunner","sr":false,"boss":"Sulfuron Harbinger"},{"item":19136,"to":"Lullzz Blackthorn","sr":false,"boss":"Golemagg the Incinerator"},{"item":18822,"to":"||de||","sr":false,"boss":"Golemagg the Incinerator"},{"item":18646,"to":"Manedic Ironbrand","sr":false,"boss":"Majordomo Executus"},{"item":19140,"to":"Mayous Goldmane","sr":false,"boss":"Majordomo Executus"},{"item":16922,"to":"Padreanton Silverleaf","sr":false,"boss":"Ragnaros"},{"item":16938,"to":"||de||","sr":false,"boss":"Ragnaros"},{"item":21110,"to":"Manedic Ironbrand","sr":false,"boss":"Ragnaros"}],"cla":null},{"key":"r5","name":"Molten Core","date":"2026-09-29","optional":false,"present":["Bunzypoo Frostmantle","Scarlypoo Starfall","Scottypoo Dawnforge","Arcturrax Fjördmark","Hinya Wolfsbane","Lullzz Blackthorn","Manedic Ironbrand","Mayous Goldmane","Shadöwheârt Highpeak","Tilton Grimshade","Padreanton Silverleaf","Shuuko Ashenvale","Starstrucker Shadowmere","Izolahunt Kælgrim","Kælstorm Sunstrider","Dixianna Æstrand","Sycamoore Thornhollow","Khaldren Windrunner","Foxwillcry Ravencrest","Dêmz Oakenshield","Toorighteous Emberheart","Mythcat Gravemoor"],"reserves":[{"name":"Bunzypoo Frostmantle","items":[17082]},{"name":"Scarlypoo Starfall","items":[17063]},{"name":"Scottypoo Dawnforge","items":[17063]},{"name":"Arcturrax Fjördmark","items":[17104,16848,18842]},{"name":"Hinya Wolfsbane","items":[16845]},{"name":"Lullzz Blackthorn","items":[17104]},{"name":"Manedic Ironbrand","items":[17076]},{"name":"Mayous Goldmane","items":[17065]},{"name":"Shadöwheârt Highpeak","items":[18821]},{"name":"Tilton Grimshade","items":[17071]},{"name":"Padreanton Silverleaf","items":[17102]},{"name":"Shuuko Ashenvale","items":[17066]},{"name":"Starstrucker Shadowmere","items":[19146]},{"name":"Izolahunt Kælgrim","items":[18814]},{"name":"Kælstorm Sunstrider","items":[17082]},{"name":"Dixianna Æstrand","items":[17107]},{"name":"Sycamoore Thornhollow","items":[17065]},{"name":"Khaldren Windrunner","items":[18814]},{"name":"Foxwillcry Ravencrest","items":[17203]},{"name":"Dêmz Oakenshield","items":[17102]},{"name":"Toorighteous Emberheart","items":[18811]},{"name":"Mythcat Gravemoor","items":[17065]},{"name":"Cythrawl Nightbloom","items":[17063,17063]},{"name":"Pugwalker","items":[17063]}],"loot":[{"item":16805,"to":"Tilton Grimshade","sr":false,"boss":"Lucifron"},{"item":17109,"to":"Mythcat Gravemoor","sr":false,"boss":"Lucifron"},{"item":19136,"to":"Kælstorm Sunstrider","sr":false,"boss":"Magmadar"},{"item":18821,"to":"Shadöwheârt Highpeak","sr":true,"boss":"Magmadar"},{"item":19146,"to":"Starstrucker Shadowmere","sr":true,"boss":"Gehennas"},{"item":18872,"to":"Shadöwheârt Highpeak","sr":false,"boss":"Gehennas"},{"item":17071,"to":"Tilton Grimshade","sr":true,"boss":"Garr"},{"item":17066,"to":"Shuuko Ashenvale","sr":true,"boss":"Garr"},{"item":19146,"to":"Sycamoore Thornhollow","sr":false,"boss":"Shazzrah"},{"item":16801,"to":"||de||","sr":false,"boss":"Shazzrah"},{"item":17110,"to":"Toorighteous Emberheart","sr":false,"boss":"Baron Geddon"},{"item":18563,"to":"Izolahunt Kælgrim","sr":false,"boss":"Baron Geddon"},{"item":19146,"to":"Toorighteous Emberheart","sr":false,"boss":"Sulfuron Harbinger"},{"item":16868,"to":"Scarlypoo Starfall","sr":false,"boss":"Sulfuron Harbinger"},{"item":17072,"to":"Izolahunt Kælgrim","sr":false,"boss":"Golemagg the Incinerator"},{"item":16845,"to":"Hinya Wolfsbane","sr":true,"boss":"Golemagg the Incinerator"},{"item":18811,"to":"Toorighteous Emberheart","sr":true,"boss":"Majordomo Executus"},{"item":18812,"to":"||de||","sr":false,"boss":"Majordomo Executus"},{"item":18814,"to":"Khaldren Windrunner","sr":true,"boss":"Ragnaros"},{"item":17107,"to":"Dixianna Æstrand","sr":true,"boss":"Ragnaros"},{"item":17076,"to":"Manedic Ironbrand","sr":true,"boss":"Ragnaros"}],"cla":{"Bunzypoo Frostmantle":[100,0,100,100],"Scarlypoo Starfall":[100,100,0,100],"Scottypoo Dawnforge":[100,0,0,100],"Arcturrax Fjördmark":[100,100,0,0],"Hinya Wolfsbane":[100,100,100,0],"Lullzz Blackthorn":[100,100,0,0],"Manedic Ironbrand":[100,100,100,100],"Mayous Goldmane":[100,100,100,0],"Shadöwheârt Highpeak":[50,0,100,100],"Tilton Grimshade":[100,100,0,100],"Padreanton Silverleaf":[100,0,100,0],"Shuuko Ashenvale":[100,0,100,0],"Starstrucker Shadowmere":[100,100,100,100],"Izolahunt Kælgrim":[100,100,0,100],"Kælstorm Sunstrider":[100,100,100,0],"Dixianna Æstrand":[50,100,0,0],"Sycamoore Thornhollow":[50,0,0,100],"Khaldren Windrunner":[100,100,100,100],"Foxwillcry Ravencrest":[50,100,0,100],"Dêmz Oakenshield":[100,100,100,100],"Toorighteous Emberheart":[100,100,100,100],"Mythcat Gravemoor":[100,100,0,0]}}],"open":{"key":"open","name":"Molten Core","reserves":[{"name":"Bunzypoo Frostmantle","items":[17082,17102]},{"name":"Scarlypoo Starfall","items":[17063,17204]},{"name":"Scottypoo Dawnforge","items":[17063,18820]},{"name":"Cythrawl Nightbloom","items":[17063,18814]},{"name":"Arcturrax Fjördmark","items":[17104,18815]},{"name":"Hinya Wolfsbane","items":[18842,18812]},{"name":"Lullzz Blackthorn","items":[17104,19140]},{"name":"Manedic Ironbrand","items":[17073,18805]},{"name":"Mayous Goldmane","items":[17065,17203]},{"name":"Shadöwheârt Highpeak","items":[19017,16807]},{"name":"Tilton Grimshade","items":[18879,18821]},{"name":"Padreanton Silverleaf","items":[17102,18820]},{"name":"Shuuko Ashenvale","items":[18823,18810]},{"name":"Starstrucker Shadowmere","items":[18822,18832]},{"name":"Izolahunt Kælgrim","items":[18814,19136]},{"name":"Kælstorm Sunstrider","items":[17082,18817]},{"name":"Fizzlé Stormwind","items":[17076,16801]},{"name":"Dixianna Æstrand","items":[18872,18811]},{"name":"Sycamoore Thornhollow","items":[17065,18808]},{"name":"Khaldren Windrunner","items":[16811,17082]},{"name":"Foxwillcry Ravencrest","items":[17203,16853]},{"name":"Dêmz Oakenshield","items":[17102,17107]},{"name":"Toorighteous Emberheart","items":[18842,17104]},{"name":"Mythcat Gravemoor","items":[17065,19140]},{"name":"Aragorrn Stonehelm","items":[17063,18803]}]},"softres":{"seriesId":"zPdyrWeQ","seriesName":"WF demo","seededAt":"2026-10-06","edition":"classic","faction":"alliance","sheets":{"r1":"Qe1wgnVb","r2":"Rb4xlqVb","r3":"7e5ymrKe","r4":"9b68nvVe","r5":"xe73owye","open":"Pe9rqyBa"}},"softresCharName":"first word of the raider name (softres allows 12 characters)"};
 
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -6089,8 +6256,18 @@ const wfDebug = {
       'await wfDebug.backup()':     'download every wf/* KV file as one JSON backup',
       'wfDebug.recompute()':        'drop caches, recalculate and redraw',
       'await generateDemoData()':   'fill wf/* with demo raids/roster/reserves/loot — writes (asks first)',
+      'await wfDebug.newDemoFixture()': 'DEV: build a new demo fixture from the LC roster and print it (does not seed softres)',
       'await wipeAllData("DELETE EVERYTHING")': '⚠ empties every wf/* key — REMOVE BEFORE GO-LIVE',
     });
+  },
+  // Developer helper: a brand-new fixture from the LC roster. The softres "WF demo" series was
+  // seeded once from the frozen DEMO_FIXTURE — a new fixture will NOT match it.
+  async newDemoFixture() {
+    const lc = await demoLcBase();
+    const fx = buildDemoFixture(lc);
+    console.log(JSON.stringify(fx));
+    console.warn('New fixture printed. It does not match the seeded softres series; paste it into parts/demo_fixture.js only if you also re-seed.');
+    return fx;
   },
   state() {
     const s = {
@@ -6278,170 +6455,197 @@ function demoGearFor(p, wonKeys) {
   return out;
 }
 
-async function generateDemoData({ overwrite = false } = {}) {
-  if (!writeToken) { console.error('Save the write token first.'); return; }
-  if ((rosterData.players.length || raidsData.raids.length) && !overwrite) {
-    console.error('There is already data here. Use generateDemoData({ overwrite: true }) to replace it (or wipeAllData first).'); return;
-  }
-  if (!confirm(`Replace the data under "${KV_PREFIX}" with demo data?`)) return;
-  let seed = 20260926; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
-  const pick = a => a[Math.floor(rnd() * a.length)];
+// Softres spec IDs (Blizzard spec IDs) for the demo's class + role, used when seeding softres.
+const DEMO_SPEC = {
+  Warrior: { Tanks: 73, 'Physical DPS': 72 }, Paladin: { Tanks: 66, Healers: 65, 'Physical DPS': 70 },
+  Hunter: { 'Ranged DPS': 254 }, Rogue: { 'Physical DPS': 260 }, Priest: { Healers: 257, 'Ranged DPS': 258 },
+  Shaman: { Healers: 264, 'Ranged DPS': 262, 'Physical DPS': 263 }, Mage: { 'Ranged DPS': 63 },
+  Warlock: { 'Ranged DPS': 265 }, Druid: { Tanks: 103, Healers: 105, 'Ranged DPS': 102, 'Physical DPS': 103 },
+};
+const demoSpecFor = p => DEMO_SPEC[p.class]?.[p.role] || Object.values(DEMO_SPEC[p.class] || { x: 0 })[0];
 
-  // Raiders: real names/classes/roles from the LC dashboard (read-only), given WoW Forever
-  // style surnames. Each raider's attendance odds come from their real recent LC attendance.
+// ─────────────────────────────────────────────────────────────────────────────
+// Demo data comes from ONE frozen fixture (DEMO_FIXTURE, parts/demo_fixture.js).
+// The same fixture was used once to seed the "WF demo" raid series on softres.it,
+// so the dashboard's demo raids point at real softres sheets with matching reserves,
+// verified loot results and bad luck protection. Regenerating the demo never touches
+// softres — it just re-applies the fixture.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Real raider names/classes/roles from the LC dashboard (read-only, un-prefixed keys), with each
+// raider's attendance odds from their real recent LC attendance. Raiders who stopped coming → inactive.
+async function demoLcBase() {
+  try {
+    const [lRoster, lAtt] = await Promise.all(['roster.json', 'attendance.json'].map(k => fetch(`${_workerBase()}/${k}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null)));
+    const recent = [...(lAtt?.raids || [])].sort((a, b) => a.date.localeCompare(b.date)).slice(-10);
+    const present = (k, r) => lAtt.overrides?.[k]?.[r.date] ?? !!r.players?.[k];
+    let base = (lRoster?.players || []).filter(p => p.name && p.role && p.class && !p.isAlt).map(p => {
+      const k = normalizeName(p.name), n = recent.filter(r => present(k, r)).length;
+      return { name: p.name, role: p.role, cls: p.class, rel: recent.length ? n / recent.length : 0.8 };
+    });
+    const gone = base.filter(p => p.rel === 0).slice(0, 2);
+    base = base.filter(p => p.rel > 0).sort((a, b) => b.rel - a.rel).slice(0, 25);
+    return { base, gone };
+  } catch (e) { console.warn('Demo: could not read the LC roster —', e.message); return { base: [], gone: [] }; }
+}
+
+// Build a NEW fixture (developer use only — the softres series was seeded from the frozen
+// one, so a new fixture won't match it). base/gone: [{ name, role, cls, rel }] from the LC roster.
+function buildDemoFixture({ base = [], gone = [], seed: seedIn = 20261006 } = {}) {
+  let seed = seedIn; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const pick = a => a[Math.floor(rnd() * a.length)];
   const SURNAMES = ['Ashenvale','Brightblade','Stormwind','Thornhollow','Dawnforge','Ironbrand','Mistwalker','Frostmantle',
     'Emberheart','Grimshade','Silverleaf','Duskwhisper','Oakenshield','Ravencrest','Sunstrider','Gravemoor','Highpeak',
     'Wolfsbane','Starfall','Blackthorn','Stonehelm','Windrunner','Shadowmere','Goldmane','Nightbloom','Fjördmark','Kælgrim','Æstrand'];
-  let base = [], gone = [], lcGear = {};
-  try {
-    const [lRoster, lAtt, lCla] = await Promise.all(['roster.json', 'attendance.json', 'cla-sheets.json'].map(k => fetch(`${_workerBase()}/${k}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null)));
-    // Each raider's most recent gear from the LC dashboard's CLA gear listings
-    const lParsed = Object.values(lCla?.parsed || {}).sort((a, b) => String(a.sheetDate || '').localeCompare(String(b.sheetDate || '')));
-    for (const pd of lParsed) for (const [k, slots] of Object.entries(pd.gearListing || {})) if (slots && Object.keys(slots).length) lcGear[k] = slots;
-    const recent = [...(lAtt?.raids || [])].sort((a, b) => a.date.localeCompare(b.date)).slice(-10);
-    const present = (k, r) => lAtt.overrides?.[k]?.[r.date] ?? !!r.players?.[k];
-    base = (lRoster?.players || []).filter(p => p.name && p.role && p.class && !p.isAlt).map(p => {
-      const k = normalizeName(p.name);
-      const n = recent.filter(r => present(k, r)).length;
-      return { name: p.name, role: p.role, cls: p.class, rel: recent.length ? n / recent.length : 0.8 };
-    });
-    // Raiders who stopped showing up on the LC dashboard become the demo's inactive raiders
-    gone = base.filter(p => p.rel === 0).slice(0, 2);
-    base = base.filter(p => p.rel > 0).sort((a, b) => b.rel - a.rel).slice(0, 25);
-    if (base.length) console.log(`Demo: using ${base.length} raiders from the LC dashboard roster.`);
-  } catch(e) { console.warn('Demo: could not read the LC roster —', e.message); }
-  if (base.length < 10) {
-    base = [['Stonewall','Tanks','Warrior'],['Barkskin','Tanks','Druid'],['Aegis','Tanks','Paladin'],['Cleaver','Physical DPS','Warrior'],['Shiv','Physical DPS','Rogue'],
+  if (base.length < 10) base = [['Stonewall','Tanks','Warrior'],['Barkskin','Tanks','Druid'],['Aegis','Tanks','Paladin'],['Cleaver','Physical DPS','Warrior'],['Shiv','Physical DPS','Rogue'],
       ['Nightstep','Physical DPS','Rogue'],['Windfury','Physical DPS','Shaman'],['Claw','Physical DPS','Druid'],['Frostnova','Ranged DPS','Mage'],['Pyrelight','Ranged DPS','Mage'],
       ['Hexweaver','Ranged DPS','Warlock'],['Doomcall','Ranged DPS','Warlock'],['Deadeye','Ranged DPS','Hunter'],['Moonfire','Ranged DPS','Druid'],['Lightwell','Healers','Priest'],
       ['Mendwell','Healers','Priest'],['Chainheal','Healers','Shaman'],['Hollow','Healers','Paladin']].map(([name, role, cls]) => ({ name, role, cls, rel: 0.7 + rnd() * 0.3 }));
-    console.log('Demo: using the built-in raider list.');
-  }
-  const used = new Set();
   if (gone.length < 2) gone = [...gone, ...[['Driftwood','Ranged DPS','Hunter'], ['Lapsed','Healers','Druid']].slice(0, 2 - gone.length).map(([name, role, cls]) => ({ name, role, cls, rel: 0 }))];
-  const nActive = base.length;
-  base = [...base, ...gone];
-  const players = base.map((b, i) => {
+  const nActive = base.length, all = [...base, ...gone], used = new Set();
+  const players = all.map(b => {
     let sur; do { sur = pick(SURNAMES); } while (used.has(sur) && used.size < SURNAMES.length); used.add(sur);
-    return { name: `${b.name.slice(0, 12)} ${sur.slice(0, 12)}`, role: b.role, class: b.cls, isAlt: false };
+    const p = { name: `${b.name.slice(0, 12)} ${sur.slice(0, 12)}`, role: b.role, class: b.cls };
+    return { ...p, spec: demoSpecFor(p) };
   });
-  const reliab = base.map((b, i) => i >= nActive ? 0.9 : Math.max(0.35, Math.min(0.98, b.rel)));
-  const stopAfter = base.map((b, i) => i >= nActive ? 3 : 99); // inactive raiders stop after the 3rd demo raid
+  const reliab = all.map((b, i) => i >= nActive ? 0.9 : Math.max(0.4, Math.min(0.98, b.rel)));
+  const stopAfter = all.map((b, i) => i >= nActive ? 2 : 99); // inactive raiders stop after the 2nd demo raid
   players[Math.min(8, players.length - 1)].srAdjustments = [{ date: '2026-08-20', delta: 2, note: 'Demo: carried over from a previous guild' }];
-  // On softres, people type their names inconsistently — exercise the accent-agnostic matching.
-  const softresName = (p, i) => i % 5 === 0 ? p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/æ/gi, 'ae').replace(/ö/gi, 'o')
-    : i % 7 === 0 ? p.name.replace(/a/, 'á') : p.name;
-  const overReserver = players.find(p => p.role === 'Ranged DPS') || players[0];
-  const doubleReserver = players.find(p => p.role === 'Physical DPS') || players[1];
 
-  // Glossary via the real import path
+  _demoGlossaryMC();
+  // The softres demo sheets are Classic Alliance raids, where Horde-only gear (Shaman tier) can't be
+  // reserved — keep it out of the demo entirely so the dashboard and softres always match.
+  const HORDE_ONLY = new Set([16837, 16838, 16839, 16840, 16841, 16842, 16843, 16844, 16946].map(id => 'id:' + id));
+  const bosses = DEMO_MC_INSTANCE.boss_order;
+  const bossItems = Object.fromEntries(Object.entries(glossary.raids['Molten Core']).map(([b, l]) => [b, l.filter(k => !HORDE_ONLY.has(k))]));
+  const elig = (k, cls) => { const e = glossary.items[k].eligibleClasses; return !e.length || e.includes(cls); };
+  const bossPool = cls => [...new Set(bosses.flatMap(b => bossItems[b] || []))].filter(k => elig(k, cls));
+
+  // 5 weekly raids ending on the most recent Tuesday before the fixture was built
+  const d0 = new Date(todayMST() + 'T19:00:00Z');
+  const lastTue = new Date(d0); lastTue.setUTCDate(d0.getUTCDate() - ((d0.getUTCDay() + 5) % 7 || 7));
+  const dates = []; for (let i = 4; i >= 0; i--) { const d = new Date(lastTue); d.setUTCDate(lastTue.getUTCDate() - i * 7); dates.push(d.toISOString().slice(0, 10)); }
+
+  const budget = {}, wants = {}, owned = {};
+  players.slice(0, 4).forEach(p => { wants[p.name] = ['id:17063']; }); // a few raiders chase Band of Accuria → BLP shows up
+  const raids = dates.map((date, i) => {
+    const optional = i === 2, noCla = i === 3;
+    const present = players.filter((p, j) => i < stopAfter[j] && rnd() < (optional ? reliab[j] - 0.25 : reliab[j])).map(p => p.name);
+    // Reserves: raiders keep reserving what they chase until they win it. One no-show reserves too.
+    const absentReserver = players.find((p, j) => !present.includes(p.name) && i < stopAfter[j]);
+    const reserving = [...players.filter(p => present.includes(p.name)), ...(absentReserver ? [absentReserver] : [])];
+    const reserves = reserving.map(p => {
+      const here = present.includes(p.name);
+      budget[p.name] = (budget[p.name] || 0) + (here ? 1 : 0);
+      const n = Math.max(1, Math.min(budget[p.name], 2));
+      const want = (wants[p.name] ||= []);
+      const pool = bossPool(p.class).filter(x => !want.includes(x) && !owned[p.name]?.has(x));
+      while (want.length < n && pool.length) want.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+      const items = want.slice(0, n).map(x => +x.slice(3));
+      if (here) budget[p.name] -= items.length;
+      return { name: p.name, items };
+    });
+    // Loot: 2 per boss, 3 from Ragnaros. A reserved item drops about half the time. Unusable drops are disenchanted.
+    const reservedBy = {};
+    for (const r of reserves) if (present.includes(r.name)) for (const id of new Set(r.items)) (reservedBy['id:' + id] ||= []).push(r.name);
+    const loot = [];
+    bosses.forEach((boss, bi) => {
+      const table = [...(bossItems[boss] || [])];
+      for (let d = 0; d < (bi === bosses.length - 1 ? 3 : 2) && table.length; d++) {
+        const reservedHere = table.filter(x => reservedBy[x]);
+        const ik = reservedHere.length && rnd() < 0.5 ? pick(reservedHere) : pick(table);
+        table.splice(table.indexOf(ik), 1);
+        const srCands = (reservedBy[ik] || []).filter(n => !owned[n]?.has(ik));
+        let to = null, sr = false;
+        if (srCands.length) { to = pick(srCands); sr = true; }
+        else { const cands = players.filter(p => present.includes(p.name) && elig(ik, p.class) && !owned[p.name]?.has(ik)); if (cands.length && rnd() < 0.85) to = pick(cands).name; }
+        loot.push({ item: +ik.slice(3), to: to || '||de||', sr, boss });
+        if (to) { (owned[to] ||= new Set()).add(ik); if (wants[to]) wants[to] = wants[to].filter(x => x !== ik); }
+      }
+    });
+    // CLA consumable scores (raid 4 ends without a CLA → attendance falls back to the reserves)
+    let cla = null;
+    if (!noCla) { cla = {}; for (const n of present) { const e = rnd() < 0.8 ? 100 : 50, f = rnd() < 0.8 ? 100 : 0, w = rnd() < 0.6 ? 100 : 0; cla[n] = [e, f, w, rnd() < 0.5 ? 100 : 0]; } }
+    return { key: 'r' + (i + 1), name: optional ? 'Molten Core (optional reclear)' : 'Molten Core', date, optional, present, reserves, loot, cla };
+  });
+  // The latest raid shows the reserve warnings: an over-reserver (3 on a 3-limit sheet with fewer SRs), a double reserve, and a pug.
+  {
+    const last = raids[raids.length - 1];
+    const ranged = players.find(p => p.role === 'Ranged DPS' && last.reserves.some(r => r.name === p.name));
+    const melee = players.find(p => p.role === 'Physical DPS' && p !== ranged && last.reserves.some(r => r.name === p.name));
+    const o = ranged && last.reserves.find(r => r.name === ranged.name);
+    if (o) { const pool = bossPool(ranged.class).filter(x => !o.items.includes(+x.slice(3)) && !owned[ranged.name]?.has(x)); while (o.items.length < 3 && pool.length) o.items.push(+pool.splice(Math.floor(rnd() * pool.length), 1)[0].slice(3)); }
+    const d = melee && last.reserves.find(r => r.name === melee.name); if (d) d.items = [d.items[0], d.items[0]];
+    last.reserves.push({ name: 'Pugwalker', items: [17063] });
+  }
+  // The next raid's sheet (open, unverified): everyone active reserves what they still want.
+  const open = { key: 'open', name: 'Molten Core', reserves: players.slice(0, nActive).filter((p, j) => reliab[j] > 0.55).map(p => {
+    const want = (wants[p.name] || []).filter(x => !owned[p.name]?.has(x));
+    const pool = bossPool(p.class).filter(x => !want.includes(x) && !owned[p.name]?.has(x));
+    while (want.length < 2 && pool.length) want.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+    return { name: p.name, items: want.slice(0, 2).map(x => +x.slice(3)) };
+  }) };
+  return { version: 1, builtAt: new Date().toISOString(), seriesName: 'WF demo', instance: 'Molten Core (Classic)', players, raids, open, softres: { seriesId: null, sheets: {} } };
+}
+
+function _demoGlossaryMC() {
   glossary = { raids: {}, items: {}, imported: {} };
   importInstanceToGlossary(DEMO_MC_INSTANCE);
   for (const [id, [type, icon]] of Object.entries(DEMO_MC_WOWHEAD)) applyWowheadInfo('id:' + id, { type, icon, classes: [] });
   rebuildItemIcons();
-  const allItems = Object.keys(glossary.items);
-  const forClass = cls => allItems.filter(k => { const e = glossary.items[k].eligibleClasses; return !e.length || e.includes(cls); });
-  const contested = ['id:17063', 'id:17109']; // Band of Accuria, Choker of Enlightenment
+}
 
-  // Dates: 8 Tuesdays back from last Tuesday
-  const today = todayMST();
-  const d0 = new Date(today + 'T19:00:00Z');
-  const lastTue = new Date(d0); lastTue.setUTCDate(d0.getUTCDate() - ((d0.getUTCDay() + 5) % 7 || 7));
-  const dates = []; for (let i = 7; i >= 0; i--) { const d = new Date(lastTue); d.setUTCDate(lastTue.getUTCDate() - i * 7); dates.push(d.toISOString().slice(0, 10)); }
-
+// Write the fixture into this dashboard's storage (roster, raids, CLAs, glossary). Never calls softres.
+async function applyDemoFixture(fx) {
+  _demoGlossaryMC();
+  const sheets = fx.softres?.sheets || {};
+  const sheetFor = (r, at) => sheets[r.key]
+    // Linked to the real softres sheet: same character names softres holds (first word, 12 chars).
+    // syncedAt is left empty so the first officer page load pulls bonuses + verified results.
+    ? { id: _uid('s_'), code: sheets[r.key], url: `https://softres.it/raid/${sheets[r.key]}`, instances: [{ slug: 'mc', name: 'Molten Core' }], reserveLimit: 3, reserves: r.reserves.map(x => ({ name: x.name.split(' ')[0], spec: null, items: [...x.items], note: '' })), edits: {} }
+    : { id: _uid('s_'), code: 'DEMO-' + r.key, url: '', demo: true, instances: [{ slug: 'mc', name: 'Molten Core' }], reserveLimit: 3, reserves: r.reserves.map(x => ({ name: x.name, spec: null, items: [...x.items], note: '' })), edits: {}, syncedAt: at };
+  const players = fx.players.map(p => ({ name: p.name, role: p.role, class: p.class, isAlt: false, ...(p.srAdjustments ? { srAdjustments: p.srAdjustments } : {}) }));
   const raids = [], clSheets = [], parsed = {};
-  const budget = {}, wants = {}, owned = {}; // owned: raider → Set of items they've received
-  const bosses = DEMO_MC_INSTANCE.boss_order, bossItems = glossary.raids['Molten Core'];
-  const bossPool = cls => [...new Set(bosses.flatMap(b => bossItems[b] || []))].filter(k => { const e = glossary.items[k].eligibleClasses; return !e.length || e.includes(cls); });
-  const resolveDemoKey = n => players.map(p => normalizeName(p.name)).find(k => k === normalizeName(n)) || normalizeName(n);
-  // A few raiders all start out chasing Band of Accuria, so bad luck protection shows up
-  players.slice(0, 4).forEach(p => { wants[normalizeName(p.name)] = ['id:17063']; });
-  dates.forEach((date, i) => {
-    const optional = i === 5;
-    const raid = normalizeRaid({ name: optional ? 'Molten Core (optional reclear)' : 'Molten Core', date, optional, status: 'past',
-      createdAt: date + 'T01:00:00Z', endedAt: date + 'T06:00:00Z', softres: [], loot: [] });
-    const present = players.filter((p, j) => i < stopAfter[j] && rnd() < (optional ? reliab[j] - 0.3 : reliab[j]));
-    const presentKeys = present.map(p => normalizeName(p.name));
-    // Reserves: each raider keeps reserving what they're chasing until they win it, and
-    // fills any spare reserve with something new their class can use. One no-show reserves too.
-    const reservers = [...present, ...players.filter(p => !present.includes(p) && i < stopAfter[players.indexOf(p)]).slice(0, 1)];
-    const reserves = reservers.map(p => {
-      const k = normalizeName(p.name);
-      budget[k] = (budget[k] || 0) + (present.includes(p) ? 1 : 0);
-      const n = Math.max(1, Math.min(budget[k], 2));
-      const want = (wants[k] ||= []);
-      const pool = bossPool(p.class).filter(x => !want.includes(x) && !owned[k]?.has(x));
-      while (want.length < n && pool.length) want.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
-      const items = want.slice(0, n).map(x => +x.slice(3));
-      if (present.includes(p)) budget[k] -= items.length;
-      return { name: softresName(p, players.indexOf(p) + i), spec: null, items, note: '' };
-    });
-    raid.softres.push({ id: _uid('s_'), code: 'DEMO' + (i + 1), url: '', demo: true, instances: [{ slug: 'mc', name: 'Molten Core' }], reserveLimit: 2,
-      reserves, edits: {}, syncedAt: date + 'T02:00:00Z' });
-    // Loot: 2 items per boss, 3 from the last boss. A reserved item is favoured about half the time.
-    const reservedBy = {};
-    for (const r of reserves) { const rk = resolveDemoKey(r.name); if (presentKeys.includes(rk)) for (const id of new Set(r.items)) (reservedBy['id:' + id] ||= []).push(rk); }
-    bosses.forEach((boss, bi) => {
-      const table = [...(bossItems[boss] || [])];
-      const nDrops = bi === bosses.length - 1 ? 3 : 2;
-      for (let d = 0; d < nDrops && table.length; d++) {
-        const reservedHere = table.filter(x => reservedBy[x]);
-        const ik = reservedHere.length && rnd() < 0.5 ? pick(reservedHere) : pick(table);
-        table.splice(table.indexOf(ik), 1);
-        let winnerKey, sr;
-        // Nobody ever receives a second copy of something they already have
-        const srCands = (reservedBy[ik] || []).filter(k => !owned[k]?.has(ik));
-        if (srCands.length) { winnerKey = pick(srCands); sr = true; }
-        else {
-          const elig = present.filter(p => { const e = glossary.items[ik].eligibleClasses; return (!e.length || e.includes(p.class)) && !owned[normalizeName(p.name)]?.has(ik); });
-          if (!elig.length) continue; // nobody can use it — sharded
-          winnerKey = normalizeName(pick(elig).name); sr = false;
-        }
-        const winner = players.find(p => normalizeName(p.name) === winnerKey);
-        raid.loot.push({ id: _uid('l_'), itemKey: ik, name: itemName(ik), recipient: winner.name, sr, at: date + 'T04:00:00Z' });
-        (owned[winnerKey] ||= new Set()).add(ik);
-        if (wants[winnerKey]) wants[winnerKey] = wants[winnerKey].filter(x => x !== ik); // won it — stop chasing
-      }
-    });
-    // CLA (all but raid 7, which was ended without one → attendance from reserves)
-    if (i !== 6) {
-      raid.claLabel = date; raid.attendance.cla = presentKeys;
-      clSheets.push({ label: date, demo: true });
+  for (const r of fx.raids) {
+    const raid = normalizeRaid({ name: r.name, date: r.date, optional: r.optional, status: 'past', createdAt: r.date + 'T01:00:00Z', endedAt: r.date + 'T06:00:00Z',
+      softres: [sheetFor(r, r.date + 'T02:00:00Z')], loot: [] });
+    for (const l of r.loot) if (l.to !== '||de||') raid.loot.push({ id: _uid('l_'), itemKey: 'id:' + l.item, name: itemName('id:' + l.item), recipient: l.to, sr: l.sr, at: r.date + 'T04:00:00Z' });
+    if (r.cla) {
+      const keys = r.present.map(normalizeName);
+      raid.claLabel = r.date; raid.attendance.cla = keys;
+      clSheets.push({ label: r.date, demo: true });
       const buffScores = {};
-      for (const k of presentKeys) { const e = rnd() < 0.8 ? 100 : 50, f = rnd() < 0.8 ? 100 : 0, w = rnd() < 0.6 ? 100 : 0;
-        buffScores[k] = { [date]: { total: Math.round((e + f + w) / 3), scrolls: rnd() < 0.5 ? 100 : 0, elixir: e, food: f, wepOil: w } }; }
-      parsed[date] = { sheetDate: date + 'T12:00:00.000Z', claPresence: presentKeys, canonicalNames: {}, gearIssues: {}, latestIssues: {}, buffScores,
-        gearListing: {} };
+      for (const [n, [e, f, w, s]] of Object.entries(r.cla)) buffScores[normalizeName(n)] = { [r.date]: { total: Math.round((e + f + w) / 3), scrolls: s, elixir: e, food: f, wepOil: w } };
+      parsed[r.date] = { sheetDate: r.date + 'T12:00:00.000Z', claPresence: keys, canonicalNames: {}, gearIssues: {}, latestIssues: {}, buffScores, gearListing: {} };
     }
     raids.push(raid);
-  });
-  // Everyone's current gear (on the last MC raid's CLA): a Molten Core piece in every slot
-  // their class can wear — whatever they won themselves first, then a sensible pick.
-  const lastCla = [...dates].reverse().find((d, idx) => parsed[d]);
+  }
+  // Current gear on the latest CLA: Molten Core pieces, what they won first
+  const lastCla = [...fx.raids].reverse().find(r => r.cla);
   if (lastCla) {
     const won = {}; for (const r of raids) for (const l of r.loot) (won[normalizeName(l.recipient)] ||= []).push(l.itemKey);
-    parsed[lastCla].gearListing = Object.fromEntries(players.map(p => [normalizeName(p.name), demoGearFor(p, won[normalizeName(p.name)] || [])]));
+    parsed[lastCla.date].gearListing = Object.fromEntries(players.map(p => [normalizeName(p.name), demoGearFor(p, won[normalizeName(p.name)] || [])]));
   }
-
-  // The most recent raid's sheet also shows the reserve warnings: one raider over-reserves,
-  // one double-reserves, and a pug who isn't on the roster reserves too.
-  {
-    const last = raids[raids.length - 1], res = last.softres[0].reserves;
-    const find = p => res.find(r => resolveDemoKey(r.name) === normalizeName(p.name));
-    const oKey = normalizeName(overReserver.name), oPool = bossPool(overReserver.class).filter(x => !owned[oKey]?.has(x));
-    const o = find(overReserver); if (o) for (let x = 0; x < 6; x++) o.items.push(+pick(oPool).slice(3));
-    const d = find(doubleReserver); if (d && d !== o) d.items = [d.items[0], d.items[0]];
-    res.push({ name: 'Pugwalker', spec: null, items: [17063], note: 'Demo: not on roster' });
-  }
-  // No active raid — start one live (e.g. Blackwing Lair from a softres link) to show the import.
-
+  // The open sheet becomes today's active raid
+  if (fx.open) raids.push(normalizeRaid({ name: fx.open.name, date: todayMST(), optional: false, status: 'active', createdAt: new Date().toISOString(), softres: [sheetFor(fx.open, new Date().toISOString())], loot: [] }));
   await _putWf('roster.json', { players, excluded: [] });
   await _putWf('glossary.json', glossary);
   await _putWf('sr-rules.json', DEFAULT_SR_RULES);
   await _putWf('raids.json', { raids });
   await _putWf('cla-sheets.json', { sheets: clSheets, parsed });
   try { sessionStorage.removeItem(STORAGE_NS + 'claSheets'); } catch(_) {}
-  console.log(`Demo data written: ${players.length} raiders, ${raids.length} raids (${raids.filter(r => r.status === 'active').length} active), ${Object.keys(glossary.items).length} items. Reloading…`);
+  return { players: players.length, raids: raids.length, linked: Object.keys(sheets).length };
+}
+
+async function generateDemoData({ overwrite = false } = {}) {
+  if (!writeToken) { console.error('Save the write token first.'); return; }
+  if ((rosterData.players.length || raidsData.raids.length) && !overwrite) {
+    console.error('There is already data here. Use generateDemoData({ overwrite: true }) to replace it (or wipeAllData first).'); return;
+  }
+  if (typeof DEMO_FIXTURE === 'undefined') { console.error('No demo fixture in this build.'); return; }
+  if (!confirm(`Replace the data under "${KV_PREFIX}" with demo data?`)) return;
+  const r = await applyDemoFixture(DEMO_FIXTURE);
+  console.log(`Demo data written: ${r.players} raiders, ${r.raids} raids (${r.linked} linked to the "${DEMO_FIXTURE.seriesName}" softres series). Reloading…`);
   setTimeout(() => location.reload(), 600);
 }
 window.generateDemoData = generateDemoData;
@@ -6469,8 +6673,12 @@ async function fetchData(opts = {}) {
       ? setStatus(`Updated at ${stamp()} — <span style="cursor:pointer;text-decoration:underline;" onclick="showErrors()">⚠ ${fetchErrors.length} warning(s) (click to view)</span>`, 'loading')
       : setStatus(`Updated at ${stamp()}`, 'success');
     done();
-    // Officers pull fresh softres data for active raids; read-only visitors never hit softres.
-    const toSync = activeRaids().filter(r => r.softres.some(s => !s.demo));
+    // Officers pull fresh softres data for active raids, plus past raids whose softres results
+    // haven't been stored yet (each sheet is fetched until it's verified, then left alone).
+    // Read-only visitors never hit softres.
+    const needsResults = s => !s.demo && (!s.syncedAt || !('blpBonuses' in s) || (s.series && !s.results));
+    const toSync = [...activeRaids().filter(r => r.softres.some(s => !s.demo)),
+      ...pastRaids().filter(r => r.softres.some(needsResults)).slice(-8)];
     if (!opts.skipSoftres && writeToken && toSync.length) {
       setStatus('Syncing softres…', 'loading');
       await syncSoftres(toSync);
