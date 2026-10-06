@@ -1681,14 +1681,8 @@
   .iv-sort button.on { color: var(--gold-light); border-color: rgba(var(--accent-rgb), 0.55); background: rgba(var(--accent-rgb), 0.08); }
   .iv-badge.sr { color: #f08080; border-color: rgba(201,76,76,0.45); }
 
-  /* Softres raid series on a sheet card */
-  .series-line { font-size: 13px; margin: 6px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .series-line a { color: var(--gold-light); }
-  .blp-softres { font-size: 14px; }
-  .series-rule { border-color: rgba(var(--accent-rgb), 0.4); }
-  .series-rule a { color: var(--gold-light); }
-  .series-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .series-facts span { border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--text); }
+.gargul-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; font-size:13px; }
+.gargul-bar code { font-size:12px; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -4154,44 +4148,57 @@ function srStats(playerName) {
 function blpLossesBefore(raidId, playerKey, itemKey) {
   return derived().blp.before[raidId]?.[playerKey]?.[itemKey] || 0;
 }
-// ── Softres raid series bad luck protection ──
-// A raid whose sheet is in a softres raid series takes its BLP from softres: each sheet carries
-// every raider's bonus going into that raid (blpBonuses, keyed by lower-cased character name).
-// Gargul turns a bonus into 100 + bonus points; with "increased max" that's /roll 1–(100 + bonus).
-function seriesSheetOf(raid) { return raid?.softres?.find(s => s.series?.blpEnabled) || null; }
-function currentSeriesSheet() {
-  const rs = sortedRaids().filter(r => seriesSheetOf(r));
-  const act = rs.filter(r => r.status === 'active');
-  return seriesSheetOf((act.length ? act : rs).slice(-1)[0]) || null;
-}
-function softresNameFor(sheet, playerKey) {
-  const r = effectiveReserves(sheet)[playerKey];
-  if (r?.name) return r.name;
-  const full = rosterPlayer(playerKey)?.name || playerKey;
-  return full.split(' ')[0]; // softres names are 12-char character names; our raiders are "First Last"
-}
-function softresBonusFor(sheet, playerKey) {
-  if (!sheet?.series?.blpEnabled) return 0;
-  const b = sheet.blpBonuses || {};
-  const name = softresNameFor(sheet, playerKey).toLowerCase();
-  const raw = b[name] ?? Object.entries(b).find(([n]) => normalizeName(n) === normalizeName(name))?.[1] ?? 0;
-  const cap = sheet.series.maxRollBonus;
-  return cap ? Math.min(raw, cap) : raw;
-}
-// Roll range for a raider on an item in a raid (series-aware; falls back to our own per-item BLP)
+// Roll range for a raider on an item in a raid: 1–(100 + losses × step), per player and item
 function rollFor(raid, playerKey, itemKey) {
-  const sh = seriesSheetOf(raid);
-  if (sh) {
-    const reserved = !!raidReserves(raid)[playerKey]?.[itemKey];
-    if (sh.series.reservesOnly && !reserved) return { max: 100, bonus: 0, source: 'softres' };
-    const bonus = softresBonusFor(sh, playerKey);
-    return { max: 100 + bonus, bonus, source: 'softres', series: sh.series.name };
-  }
   const losses = blpLossesBefore(raid.id, playerKey, itemKey);
   return { max: rollMax(losses), bonus: rollMax(losses) - 100, losses, source: 'dashboard' };
 }
 function rollMax(losses) {
   return 100 + (srRules.blp.enabled ? losses * srRules.blp.step : 0);
+}
+
+// ── Gargul import with per-item bad luck protection ──
+// The same format softres.it serves for Gargul (base64(zlib(JSON)), no checksum), built from
+// our own reserves, plus a `wf` table: { blp: { itemId: { characterName: bonus } } }. The
+// loot master's WF Bonus Rolls addon reads it so every item rolls at its own bonus; Gargul
+// without the addon falls back to the per-player `bonusrolls` (each raider's highest bonus).
+// Bonuses are never consumed in game — the dashboard recomputes them for the next raid.
+function gargulImportPayload(raid) {
+  const now = Math.floor(Date.now() / 1000);
+  const chars = new Map();   // lower-cased character name -> { name, key, items:[ids] }
+  for (const s of raid.softres) {
+    for (const r of Object.values(effectiveReserves(s))) {
+      const n = String(r.name || '').trim().split(/\s+/)[0]; if (!n || !r.items.length) continue; // in-game character name
+      const c = chars.get(n.toLowerCase()) || { name: n, key: r.key, items: [] };
+      c.items.push(...r.items); chars.set(n.toLowerCase(), c);
+    }
+  }
+  const blp = {}, softreserves = [], bonusrolls = [];
+  for (const [lc, c] of chars) {
+    let best = 0;
+    for (const id of new Set(c.items)) {
+      const bonus = rollMax(blpLossesBefore(raid.id, c.key, itemKeyFor(id))) - 100;
+      if (bonus > 0) { (blp[id] ||= {})[lc] = bonus; best = Math.max(best, bonus); }
+    }
+    const cls = String(rosterPlayer(c.key)?.class || '').toLowerCase();
+    softreserves.push({ name: c.name, class: cls || 'priest', note: '', plusOnes: 0,
+      items: c.items.map((id, i) => ({ id: +id, note: '', order: i })) });
+    if (best) bonusrolls.push({ name: c.name, bonus: best });
+  }
+  return {
+    metadata: { id: `wf-${raid.id}-${now}`, url: raid.softres[0]?.url || 'https://softres.it/', createdAt: now, updatedAt: now,
+      raidStartsAt: Math.floor(new Date(raid.date || Date.now()).getTime() / 1000) || now, discordUrl: '', hidden: false,
+      instances: [...new Set(raid.softres.flatMap(s => s.instances.map(i => i.slug || i.name)))], lockedAt: now,
+      note: raid.name || '', bonusrolls_consumed_on_use: false },
+    softreserves, hardreserves: [], bonusrolls,
+    wf: { v: 1, label: raid.name || raid.id, blp },
+  };
+}
+async function gargulImportString(raid) {
+  const json = new TextEncoder().encode(JSON.stringify(gargulImportPayload(raid)));
+  const zipped = new Uint8Array(await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+  let bin = ''; for (let i = 0; i < zipped.length; i += 0x8000) bin += String.fromCharCode(...zipped.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -4234,15 +4241,6 @@ function applySoftresData(sheet, raid) {
   sheet.locked = !!raid.locked;
   sheet.hidden = !!raid.hide_reserves;
   sheet.reserves = (raid.reserves || []).map(r => ({ name: r.name, spec: r.spec ?? null, items: [...(r.items || [])], note: r.note || '', ...(r.discord_id ? { discordId: String(r.discord_id) } : {}) }));
-  // Softres raid series (bad luck protection is managed there when the sheet is in a series)
-  const rs = raid.raid_series;
-  const beforeSeries = JSON.stringify([sheet.series, sheet.blpBonuses, sheet.verifiedAt]);
-  sheet.series = rs ? { id: rs.id, name: rs.name, blpEnabled: !!rs.blp_enabled, system: rs.blp_system,
-    reservedItemPoints: rs.reserved_item_points ?? 0, repeatPoints: rs.reserved_item_repeat_points ?? 0, noLootPoints: rs.no_loot_points ?? 0,
-    pointsPerRoll: rs.roll_points_per_bonus || 1, maxRollBonus: rs.roll_max_per_raid ?? null, reservesOnly: !!rs.roll_reserves_only, carryOnFail: !!rs.rolls_carry_on_fail } : null;
-  // { lower-cased character name: bonus going INTO this raid } — earned on earlier verified raids
-  sheet.blpBonuses = raid.blp_bonuses && !Array.isArray(raid.blp_bonuses) ? { ...raid.blp_bonuses } : {};
-  sheet.verifiedAt = raid.verified_at ? new Date(raid.verified_at * 1000).toISOString() : null;
   sheet.raidDate = raid.raid_date ? new Date(raid.raid_date * 1000).toISOString() : null;
   sheet.syncedAt = new Date().toISOString();
   sheet.syncError = null;
@@ -4250,18 +4248,7 @@ function applySoftresData(sheet, raid) {
   for (const inst of raid.instances || []) {
     if (inst.items?.length && !glossary.imported[inst.slug || inst.name]) imported.push(importInstanceToGlossary(inst));
   }
-  return { changed: before !== JSON.stringify(sheet.reserves) || beforeSeries !== JSON.stringify([sheet.series, sheet.blpBonuses, sheet.verifiedAt]), imported };
-}
-
-// Verified loot results (public): /raid/CODE/result. Fetched once per sheet after verification.
-async function fetchSoftresResults(code) {
-  const res = await fetch(corsProxyUrl(`https://softres.it/raid/${encodeURIComponent(code)}/result`), { cache: 'no-store' });
-  if (!res.ok) throw new Error(`softres results fetch failed (HTTP ${res.status})`);
-  const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-  const page = JSON.parse(doc.querySelector('[data-page]')?.getAttribute('data-page') || 'null');
-  const loot = page?.props?.loot;
-  if (!Array.isArray(loot)) throw new Error('softres results page had no loot list');
-  return loot.map(l => ({ item: l.item_id, name: l.item?.name || '', winner: l.winner?.name || '', received: !!l.received, de: l.winner?.name === '||de||', at: l.awarded_at || null }));
+  return { changed: before !== JSON.stringify(sheet.reserves), imported };
 }
 
 async function syncSoftresSheet(raid, sheet) {
@@ -4269,7 +4256,6 @@ async function syncSoftresSheet(raid, sheet) {
   try {
     const data = await fetchSoftresRaid(sheet.code);
     const r = applySoftresData(sheet, data);
-    if (sheet.verifiedAt && !sheet.results) { sheet.results = await fetchSoftresResults(sheet.code); r.changed = true; }
     return r;
   } catch(e) {
     sheet.syncError = e.message;
@@ -4761,17 +4747,8 @@ function toggleLoot(td, playerName) {
   h += `<div class="expand-section-title">Loot Received ${loot.length ? `<span style="color:var(--text-dim);letter-spacing:0.05em;">— ${loot.length} item${loot.length === 1 ? '' : 's'} · ${srWins} via SR</span>` : ''}</div>`;
   h += loot.length ? `<div class="loot-list">${loot.map(lootChipHtml).join('')}</div>` : `<em class="no-loot">No loot recorded</em>`;
 
-  // Bad luck protection. With a softres raid series it's one bonus per raider (any reserved item);
-  // otherwise every item this raider has lost an SR roll on and not won since.
-  const curSeries = currentSeriesSheet();
-  if (curSeries) {
-    const bonus = softresBonusFor(curSeries, key);
-    const reservedNow = Object.keys(activeRaids().map(r => raidReserves(r)[key] || {}).reduce((a, m) => ({ ...a, ...m }), {}));
-    h += `<div class="expand-section-title" style="margin-top:14px;">Bad Luck Protection <span style="color:var(--text-dim);letter-spacing:0.05em;">— softres series “${escHtml(curSeries.series.name)}”</span></div>`;
-    h += bonus ? `<div class="blp-softres"><span class="blp-boost">+${bonus} roll bonus</span> <span class="iv-dim">/roll 1–${100 + bonus} on ${curSeries.series.reservesOnly ? 'any item they reserve' : 'any roll'}</span>
-        ${reservedNow.length ? `<div class="loot-list" style="margin-top:6px;">${reservedNow.map(ik => `<span class="loot-item blp-chip" title="Reserved this raid — rolls 1–${100 + bonus}">${itemLinkHtml(ik)}</span>`).join('')}</div>` : ''}</div>`
-      : `<em class="no-loot">No roll bonus yet</em>`;
-  } else if (srRules.blp.enabled) {
+  // Bad luck protection: every item this raider has lost an SR roll on and not won since.
+  if (srRules.blp.enabled) {
     const blp = Object.entries(derived().blp.losses[key] || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || itemName(a[0]).localeCompare(itemName(b[0])));
     h += `<div class="expand-section-title" style="margin-top:14px;">Bad Luck Protection ${blp.length ? `<span style="color:var(--text-dim);letter-spacing:0.05em;">— ${blp.length} item${blp.length === 1 ? '' : 's'}</span>` : ''}</div>`;
     h += blp.length ? `<div class="loot-list">${blp.map(([ik, n]) => `<span class="loot-item blp-chip" title="Rolls 1–${rollMax(n)} on this item (lost ${n} SR roll${n === 1 ? '' : 's'})">${itemLinkHtml(ik)}</span>`).join('')}</div>`
@@ -4994,6 +4971,7 @@ function renderRaidDetail(panel, raid) {
         ${raid.optional ? '<span class="tag-opt">optional</span>' : ''}
         <span style="color:var(--text-dim);">${fmtDate(raid.date)}</span>
         <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;" class="write-gated-hide">
+          ${raid.status === 'active' && Object.keys(raidReserves(raid)).length ? `<button class="ghost-btn" onclick="copyGargulImport('${raid.id}')" title="Reserves + bad luck bonuses for Gargul (/gl sr). Each item rolls at its own bonus with the WF Bonus Rolls addon.">⧉ Gargul export</button>` : ''}
           <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Edit</button>
           ${raid.status === 'active'
             ? `<button class="small-gold-btn" onclick="endRaid('${raid.id}')">END RAID</button>`
@@ -5214,7 +5192,7 @@ function renderLootItemView(el, raid, itemKey) {
         <span class="sr-name">${playerNameHtml(r.name)}${r.rp || !writeToken ? '' : ' <span class="tag-warn">not on roster</span>'}</span>
         ${r.count > 1 ? `<span class="sr-multi" title="Reserved ${r.count} times — rolls ${r.count} times">×${r.count}</span>` : '<span></span>'}
         ${gearSlots ? `<span class="sr-cur">${currentGearHtml(r.name, gearSlots)}</span>` : ''}
-        <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.roll.source === 'softres' ? (r.roll.bonus ? `Softres bad luck protection: +${r.roll.bonus} (${escHtml(r.roll.series)})` : 'Standard roll — no softres bonus yet') : r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
+        <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
         <span class="sr-bal">${r.over && writeToken ? `<span class="over-chip" title="Reserved ${r.ev.reserved} SRs this raid but only had ${r.ev.reserved - r.ev.over}">⚠ OVER-RESERVED ${r.ev.reserved}/${r.ev.reserved - r.ev.over}</span>` : ''}
           ${!r.present ? '<span class="tag-warn">not marked present</span>' : ''}${r.got ? '<span class="tag-ok">✓ awarded</span>' : ''}</span>
         <span style="text-align:right;">${r.got ? '' : assignBtn(r.name, true)}</span>
@@ -5307,53 +5285,6 @@ async function removeLoot(raidId, i) {
 }
 
 // ── Reserves ────────────────────────────────────────────────────
-// ── Softres raid series: verification status, absent reservers who still got points, loot cross-check ──
-const _stripRealm = n => String(n || '').split('-')[0];
-function softresResultCheck(raid, s) {
-  if (!s.results) return null;
-  const won = s.results.filter(r => !r.de && r.received);
-  const keyOf = n => resolveRosterKey(_stripRealm(n));
-  const want = {}; for (const r of won) { const k = `${keyOf(r.winner)}|id:${r.item}`; want[k] = (want[k] || 0) + 1; }
-  const have = {}; for (const l of raid.loot) { const k = `${normalizeName(l.recipient)}|${l.itemKey}`; have[k] = (have[k] || 0) + 1; }
-  const missing = Object.entries(want).filter(([k, n]) => (have[k] || 0) < n).map(([k]) => k);
-  const extra = Object.entries(have).filter(([k, n]) => (want[k] || 0) < n).map(([k]) => k);
-  // Reservers who weren't present but didn't receive their item: softres still gives them points
-  const winners = new Set(won.map(r => normalizeName(_stripRealm(r.winner))));
-  const absent = Object.values(effectiveReserves(s)).filter(r => !attendanceOf(raid, r.key).present && !winners.has(normalizeName(r.name)))
-    .map(r => ({ name: r.name, key: r.key, points: (s.series?.reservedItemPoints || 0) * new Set(r.items).size }))
-    .filter(r => r.points > 0);
-  return { won: won.length, missing, extra, absent };
-}
-function seriesSheetHtml(raid, s) {
-  if (!s.series) return '';
-  const verified = s.verifiedAt ? `<span class="tag-ok" title="Loot results imported into softres ${fmtAgo(s.verifiedAt)}">✓ results verified</span>`
-    : raid.status === 'active' ? '<span class="tag-opt">results imported after the raid</span>' : '<span class="tag-warn" title="Import the Gargul post-raid export on softres so bad luck protection counts this raid">awaiting result import</span>';
-  let h = `<div class="series-line">Softres series <a href="https://softres.it/raid-series/${escHtml(s.series.id)}" target="_blank" rel="noopener">“${escHtml(s.series.name)}”</a> · bad luck protection is managed there ${verified}</div>`;
-  const chk = softresResultCheck(raid, s);
-  if (chk && writeToken) {
-    if (!raid.loot.length && chk.won) h += `<div class="series-line">Softres has ${chk.won} awarded item${chk.won === 1 ? '' : 's'} for this raid. <button class="small-gold-btn" onclick="importSoftresLoot('${raid.id}','${s.id}')">IMPORT LOOT</button></div>`;
-    else if (chk.missing.length || chk.extra.length) h += `<div class="warn-banner">Loot differs from the softres results: ${chk.missing.length} missing here, ${chk.extra.length} not in softres. ${chk.missing.length ? `<button class="ghost-btn" onclick="importSoftresLoot('${raid.id}','${s.id}')">Add the missing ones</button>` : ''}</div>`;
-    else if (chk.won) h += `<div class="series-line iv-dim">✓ Loot matches the softres results (${chk.won} items).</div>`;
-    if (chk.absent.length) h += `<div class="warn-banner">Softres gave bad luck points to ${chk.absent.length} reserver${chk.absent.length === 1 ? '' : 's'} who weren't here: ${chk.absent.map(a => `${escHtml(a.name)} (+${a.points})`).join(', ')}. Softres can't see attendance — remove them with a negative adjustment on the <a href="https://softres.it/raid-series/${escHtml(s.series.id)}" target="_blank" rel="noopener">series page</a> if your rules say absent raiders don't earn it.</div>`;
-  }
-  return h;
-}
-async function importSoftresLoot(raidId, sheetId) {
-  const raid = getRaid(raidId), s = raid.softres.find(x => x.id === sheetId); if (!s?.results) return;
-  const res = raidReserves(raid);
-  const have = {}; for (const l of raid.loot) { const k = `${normalizeName(l.recipient)}|${l.itemKey}`; have[k] = (have[k] || 0) + 1; }
-  let added = 0;
-  for (const r of s.results.filter(r => !r.de && r.received)) {
-    const key = resolveRosterKey(_stripRealm(r.winner)), ik = 'id:' + r.item, k = `${key}|${ik}`;
-    if (have[k]) { have[k]--; continue; }
-    raid.loot.push({ id: _uid('l_'), itemKey: ik, name: itemName(ik, r.name), recipient: rosterPlayer(key)?.name || _stripRealm(r.winner), sr: !!res[key]?.[ik], at: r.at ? new Date(r.at * 1000).toISOString() : new Date().toISOString(), source: 'softres' });
-    added++;
-  }
-  await saveRaids().catch(() => {});
-  flash(`Imported ${added} item${added === 1 ? '' : 's'} from softres`);
-  refreshAll();
-}
-
 function renderRaidReserves(el, raid) {
   const sheetHtml = s => {
     const eff = Object.values(effectiveReserves(s)).sort((a, b) => a.name.localeCompare(b.name));
@@ -5371,7 +5302,6 @@ function renderRaidReserves(el, raid) {
       </div>
       ${s.syncError ? `<div class="warn-banner">${escHtml(s.syncError)}</div>` : ''}
       ${s.hidden ? `<div class="warn-banner">This softres raid hides reserves from non-managers, so the list may be empty.</div>` : ''}
-      ${seriesSheetHtml(raid, s)}
       <table class="mini-table"><thead><tr><th>Character</th><th>Reserves</th><th>SRs</th><th></th></tr></thead><tbody>
       ${eff.map(r => {
         const rp = rosterPlayer(r.key);
@@ -5394,7 +5324,12 @@ function renderRaidReserves(el, raid) {
       </div>
     </div>`;
   };
+  const gargul = raid.softres.some(s => Object.keys(effectiveReserves(s)).length)
+    ? `<div class="write-gated-hide gargul-bar"><button class="small-gold-btn" onclick="copyGargulImport('${raid.id}')">COPY GARGUL IMPORT</button>
+        <span class="iv-dim">Paste into Gargul's soft-reserve import (<code>/gl sr</code>). Each item rolls at its own bad luck bonus when the loot master runs the WF Bonus Rolls addon.</span></div>`
+    : '';
   el.innerHTML = `
+    ${gargul}
     ${raid.softres.map(sheetHtml).join('')}
     <div class="write-gated-hide" style="margin-top:12px;">
       ${raid.softres.length
@@ -5410,6 +5345,16 @@ function renderRaidReserves(el, raid) {
     buildAutocomplete({ container: document.getElementById('arWho_' + s.id), inputId: 'arWhoIn_' + s.id, placeholder: 'Character', items: rosterData.players.map(p => p.name).sort(), renderOption: v => playerNameHtml(v.label) });
     buildAutocomplete({ container: document.getElementById('arItem_' + s.id), inputId: 'arItemIn_' + s.id, placeholder: 'Item', items: pool.map(k => ({ value: k, label: itemName(k) })).sort((a, b) => a.label.localeCompare(b.label)) });
   }
+}
+
+async function copyGargulImport(raidId) {
+  const raid = getRaid(raidId);
+  try {
+    const s = await gargulImportString(raid);
+    await navigator.clipboard.writeText(s);
+    const n = Object.keys(gargulImportPayload(raid).wf.blp).length;
+    flash(`Gargul import copied · ${n} item${n === 1 ? '' : 's'} with bad luck bonuses`);
+  } catch (e) { flash('Could not copy the Gargul import: ' + e.message, 'error'); }
 }
 
 async function addSheet(raidId) {
@@ -5959,22 +5904,6 @@ async function glNotSame(i) {
 // ═════════════════════════════════════════════════════════════════════════════
 // SR Rules
 // ═════════════════════════════════════════════════════════════════════════════
-// Read-only summary of the softres raid series that now runs bad luck protection
-function seriesRulesHtml() {
-  const cur = currentSeriesSheet(); if (!cur) return '';
-  const x = cur.series;
-  const sys = { roll_increase: 'Roll bonus', bonus_reserves: 'Bonus soft reserves', bonus_hard_reserves: 'Bonus hard reserves' }[x.system] || x.system;
-  return `<div class="rule series-rule"><div class="rule-text"><b>Bad luck protection — softres raid series “${escHtml(x.name)}”</b>
-      <span>Managed on softres and shown in game by Gargul. Change these on the <a href="https://softres.it/raid-series/${escHtml(x.id)}/edit" target="_blank" rel="noopener">series settings</a>; the dashboard reads them on every softres sync.</span>
-      <span class="series-facts">${[
-        `${sys}${x.system === 'roll_increase' ? `: +1 roll per ${x.pointsPerRoll} point${x.pointsPerRoll === 1 ? '' : 's'}${x.maxRollBonus ? `, at most +${x.maxRollBonus}` : ''}` : ''}`,
-        `${x.reservedItemPoints} points per reserved item not received${x.repeatPoints ? ` (+${x.repeatPoints} for reserving it again)` : ''}`,
-        x.noLootPoints ? `${x.noLootPoints} points for a raid without loot` : '',
-        x.reservesOnly ? 'bonus only on reserved items' : 'bonus on any roll',
-        x.carryOnFail ? 'points kept until a boosted roll wins' : 'points used up whenever a boost is used',
-      ].filter(Boolean).map(t => `<span>${escHtml(t)}</span>`).join('')}</span></div></div>`;
-}
-
 function renderRulesPanel() {
   const panel = document.getElementById('rulesPanel'); if (!panel) return;
   const r = srRules;
@@ -5989,8 +5918,7 @@ function renderRulesPanel() {
       <div class="rule-ctl">${tog('ruBuffOn', r.buff.enabled)}<input id="ruBuffTh" type="number" min="0" max="100" class="gl-input rule-num" value="${r.buff.threshold}" oninput="rulesDirty()"><span>%</span></div></div>
     <div class="rule"><div class="rule-text"><b>Attendance streak bonus</b><span>+1 SR on every Nth raid in a row (N, 2N, 3N…). Missing a regular raid resets the streak; optional raids never break it but count when attended.</span></div>
       <div class="rule-ctl">${tog('ruStreakOn', r.streak.enabled)}<span>every</span><input id="ruStreakN" type="number" min="1" class="gl-input rule-num" value="${r.streak.every}" oninput="rulesDirty()"><span>raids</span></div></div>
-    ${seriesRulesHtml()}
-    <div class="rule"><div class="rule-text"><b>Bad luck protection${currentSeriesSheet() ? ' — raids without a softres series' : ''}</b><span>Each time a raider reserves an item and loses it to someone else, their roll for that item grows by this much (100 → 120 → 140…). Resets when they win it. Tracked per item.${currentSeriesSheet() ? ' Only used for raids whose softres sheet isn\'t in a raid series.' : ''}</span></div>
+    <div class="rule"><div class="rule-text"><b>Bad luck protection</b><span>Each time a raider reserves an item and loses it to someone else, their roll for that item grows by this much (100 → 120 → 140…). Resets when they win it. Tracked per item. In game, the raid's Gargul import carries these rolls and the loot master's WF Bonus Rolls addon applies them item by item.</span></div>
       <div class="rule-ctl">${tog('ruBlpOn', r.blp.enabled)}<span>+</span><input id="ruBlpStep" type="number" min="0" class="gl-input rule-num" value="${r.blp.step}" oninput="rulesDirty()"><span>per loss</span></div></div>
     <div style="display:flex;gap:8px;margin-top:18px;" class="write-gated-hide">
       <button id="ruSave" class="gloss-btn-saveable small-gold-btn" onclick="saveRulesFromForm()">SAVE RULES</button>
@@ -6051,16 +5979,6 @@ function ivOpenItem(key) {
 
 // Everyone whose next roll on this item is boosted, highest roll first
 function blpHoldersFor(itemKey) {
-  // Softres series: the bonus is per raider and applies to whatever they reserve, so the people who
-  // matter for this item are the ones who reserved it on the current series sheet.
-  const cur = currentSeriesSheet();
-  if (cur) {
-    const raid = raidsData.raids.find(r => r.softres.includes(cur));
-    return Object.entries(raidReserves(raid)).filter(([, m]) => m[itemKey]).map(([pk]) => {
-      const bonus = softresBonusFor(cur, pk);
-      return { pk, bonus, softres: true, name: rosterPlayer(pk)?.name || softresNameFor(cur, pk), roll: 100 + bonus };
-    }).sort((a, b) => b.roll - a.roll || a.name.localeCompare(b.name));
-  }
   if (!srRules.blp.enabled) return [];
   return Object.entries(derived().blp.losses).map(([pk, m]) => ({ pk, losses: m[itemKey] || 0 })).filter(x => x.losses > 0)
     .map(x => ({ ...x, name: rosterPlayer(x.pk)?.name || canonicalNames?.[x.pk] || x.pk, roll: rollMax(x.losses) }))
@@ -6098,9 +6016,7 @@ function renderItemsPanel() {
 
   // Badges for the item list: how many raiders hold BLP on it, and how often it's dropped
   const blpCount = {}, dropped = {};
-  const curS = currentSeriesSheet();
-  if (curS) { const raid = raidsData.raids.find(r => r.softres.includes(curS)); for (const [pk, m] of Object.entries(raidReserves(raid))) if (softresBonusFor(curS, pk)) for (const k of Object.keys(m)) blpCount[k] = (blpCount[k] || 0) + 1; }
-  else for (const m of Object.values(derived().blp.losses)) for (const [k, n] of Object.entries(m)) if (n > 0) blpCount[k] = (blpCount[k] || 0) + 1;
+  for (const m of Object.values(derived().blp.losses)) for (const [k, n] of Object.entries(m)) if (n > 0) blpCount[k] = (blpCount[k] || 0) + 1;
   for (const r of raidsData.raids) for (const l of r.loot) dropped[l.itemKey] = (dropped[l.itemKey] || 0) + 1;
   const srCount = {}; // every SR ever placed on the item (double reserves count twice)
   for (const r of raidsData.raids) for (const m of Object.values(raidReserves(r))) for (const [k, n] of Object.entries(m)) srCount[k] = (srCount[k] || 0) + n;
@@ -6124,7 +6040,7 @@ function renderItemsPanel() {
         const it = glossary.items[k] || {};
         return `<div class="iv-row${k === _iv.item ? ' selected' : ''}" onclick="ivSelect('item','${jsAttr(k)}')">
           ${itemIconSmall(k)}<span class="iv-row-name">${escHtml(itemName(k))}${it.slot ? `<span class="iv-row-slot">${escHtml(it.slot)}</span>` : ''}</span>
-          ${blpCount[k] ? `<span class="iv-badge blp" title="${curS ? `${blpCount[k]} reserver${blpCount[k] === 1 ? ' has' : 's have'} a softres roll bonus` : `${blpCount[k]} raider${blpCount[k] === 1 ? ' has' : 's have'} bad luck protection on this item`}">▲ ${blpCount[k]}</span>` : ''}
+          ${blpCount[k] ? `<span class="iv-badge blp" title="${blpCount[k]} raider${blpCount[k] === 1 ? ' has' : 's have'} bad luck protection on this item">▲ ${blpCount[k]}</span>` : ''}
           ${srCount[k] ? `<span class="iv-badge sr" title="${srCount[k]} SR${srCount[k] === 1 ? '' : 's'} placed on this item">★ ${srCount[k]}</span>` : ''}
           ${dropped[k] ? `<span class="iv-badge" title="Dropped ${dropped[k]}×">${dropped[k]}×</span>` : ''}</div>`;
       }).join('') : '<div class="gl-empty">No items for this boss.</div>'}</div></div>
@@ -6148,15 +6064,7 @@ function itemDetailHtml(key) {
   const srWins = hist.reduce((a, h) => a + h.loot.filter(l => l.sr).length, 0);
   const reserves = hist.reduce((a, h) => a + h.reservers.reduce((x, r) => x + r.count, 0), 0);
 
-  const cur = currentSeriesSheet();
-  const blpHtml = cur
-    ? (holders.length ? `<div class="iv-sub iv-dim" style="margin-bottom:6px;">Reserved on the current sheet · bonuses from softres series “${escHtml(cur.series.name)}”, usable on any reserved item</div>
-        <div class="iv-blp">${holders.map(h => `<div class="iv-blp-row">
-        <span class="iv-blp-name">${playerNameHtml(h.name)}</span>
-        <span class="${h.bonus ? 'blp-boost' : 'iv-dim'}">/roll 1–${h.roll}</span>
-        <span class="iv-dim">${h.bonus ? `+${h.bonus} bonus` : 'no bonus yet'}</span></div>`).join('')}</div>`
-      : `<div class="gl-empty">No one has reserved this on the current sheet. Softres bonuses apply to whatever a raider reserves.</div>`)
-    : !srRules.blp.enabled ? '<div class="gl-empty">Bad luck protection is turned off in the SR rules.</div>'
+  const blpHtml = !srRules.blp.enabled ? '<div class="gl-empty">Bad luck protection is turned off in the SR rules.</div>'
     : holders.length ? `<div class="iv-blp">${holders.map(h => `<div class="iv-blp-row">
         <span class="iv-blp-name">${playerNameHtml(h.name)}</span>
         <span class="blp-boost">/roll 1–${h.roll}</span>
@@ -6185,7 +6093,7 @@ function itemDetailHtml(key) {
       <div><b>${reserves}</b><span>SR${reserves === 1 ? '' : 's'} placed</span></div>
       <div><b>${drops}</b><span>dropped</span></div>
       <div><b>${srWins}</b><span>won via SR</span></div>
-      <div><b>${cur ? holders.filter(h => h.bonus).length : holders.length}</b><span>${cur ? 'boosted reservers' : 'with BLP'}</span></div>
+      <div><b>${holders.length}</b><span>with BLP</span></div>
     </div>
     <div class="expand-section-title">Bad Luck Protection</div>
     ${blpHtml}
@@ -6260,13 +6168,13 @@ const wfDebug = {
       'await wipeAllData("DELETE EVERYTHING")': '⚠ empties every wf/* key — REMOVE BEFORE GO-LIVE',
     });
   },
-  // Developer helper: a brand-new fixture from the LC roster. The softres "WF demo" series was
-  // seeded once from the frozen DEMO_FIXTURE — a new fixture will NOT match it.
+  // Developer helper: a brand-new fixture from the LC roster. The demo softres sheets were
+  // seeded once from the frozen DEMO_FIXTURE — a new fixture will NOT match them.
   async newDemoFixture() {
     const lc = await demoLcBase();
     const fx = buildDemoFixture(lc);
     console.log(JSON.stringify(fx));
-    console.warn('New fixture printed. It does not match the seeded softres series; paste it into parts/demo_fixture.js only if you also re-seed.');
+    console.warn('New fixture printed. It does not match the seeded softres sheets; paste it into parts/demo_fixture.js only if you also re-seed.');
     return fx;
   },
   state() {
@@ -6466,10 +6374,10 @@ const demoSpecFor = p => DEMO_SPEC[p.class]?.[p.role] || Object.values(DEMO_SPEC
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Demo data comes from ONE frozen fixture (DEMO_FIXTURE, parts/demo_fixture.js).
-// The same fixture was used once to seed the "WF demo" raid series on softres.it,
-// so the dashboard's demo raids point at real softres sheets with matching reserves,
-// verified loot results and bad luck protection. Regenerating the demo never touches
-// softres — it just re-applies the fixture.
+// The same fixture was used once to seed softres.it sheets, so the dashboard's demo raids
+// point at real softres sheets with matching reserves (bad luck protection is the
+// dashboard's own, from the loot log). Regenerating the demo never touches softres —
+// it just re-applies the fixture.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Real raider names/classes/roles from the LC dashboard (read-only, un-prefixed keys), with each
@@ -6645,7 +6553,7 @@ async function generateDemoData({ overwrite = false } = {}) {
   if (typeof DEMO_FIXTURE === 'undefined') { console.error('No demo fixture in this build.'); return; }
   if (!confirm(`Replace the data under "${KV_PREFIX}" with demo data?`)) return;
   const r = await applyDemoFixture(DEMO_FIXTURE);
-  console.log(`Demo data written: ${r.players} raiders, ${r.raids} raids (${r.linked} linked to the "${DEMO_FIXTURE.seriesName}" softres series). Reloading…`);
+  console.log(`Demo data written: ${r.players} raiders, ${r.raids} raids (${r.linked} linked to softres sheets). Reloading…`);
   setTimeout(() => location.reload(), 600);
 }
 window.generateDemoData = generateDemoData;
@@ -6673,12 +6581,10 @@ async function fetchData(opts = {}) {
       ? setStatus(`Updated at ${stamp()} — <span style="cursor:pointer;text-decoration:underline;" onclick="showErrors()">⚠ ${fetchErrors.length} warning(s) (click to view)</span>`, 'loading')
       : setStatus(`Updated at ${stamp()}`, 'success');
     done();
-    // Officers pull fresh softres data for active raids, plus past raids whose softres results
-    // haven't been stored yet (each sheet is fetched until it's verified, then left alone).
-    // Read-only visitors never hit softres.
-    const needsResults = s => !s.demo && (!s.syncedAt || !('blpBonuses' in s) || (s.series && !s.results));
+    // Officers pull fresh softres data for active raids, plus past raids with a sheet that was
+    // never synced (fetched once, then left alone). Read-only visitors never hit softres.
     const toSync = [...activeRaids().filter(r => r.softres.some(s => !s.demo)),
-      ...pastRaids().filter(r => r.softres.some(needsResults)).slice(-8)];
+      ...pastRaids().filter(r => r.softres.some(s => !s.demo && !s.syncedAt)).slice(-8)];
     if (!opts.skipSoftres && writeToken && toSync.length) {
       setStatus('Syncing softres…', 'loading');
       await syncSoftres(toSync);
