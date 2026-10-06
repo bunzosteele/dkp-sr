@@ -6681,6 +6681,31 @@ function _demoGlossaryMC() {
   rebuildItemIcons();
 }
 
+const DEMO_BUNZIE = { name: 'Bunzie Ashveil', role: 'Healers', class: 'Priest' };
+function addDemoBunzie(fx, players, raids, parsed) {
+  if (players.some(p => normalizeName(p.name) === normalizeName(DEMO_BUNZIE.name))) return null;
+  players.push({ ...DEMO_BUNZIE, isAlt: false });
+  const key = normalizeName(DEMO_BUNZIE.name), first = DEMO_BUNZIE.name.split(' ')[0];
+  const shared = (fx.open?.reserves.find(r => r.name.startsWith('Bunzypoo'))?.items || [17082]).map(Number)[0];
+  // His "chase" item: whatever priest-usable item dropped most often, so he's lost it several times
+  const drops = {};
+  for (const r of fx.raids) for (const l of r.loot) if (l.to !== '||de||' && +l.item !== shared) drops[+l.item] = (drops[+l.item] || 0) + 1;
+  const usable = id => { const c = glossary.items['id:' + id]?.eligibleClasses || []; return !c.length || c.includes(DEMO_BUNZIE.class); };
+  const chase = +Object.entries(drops).filter(([id]) => usable(id)).sort((a, b) => b[1] - a[1])[0][0];
+  fx.raids.forEach((r, i) => {
+    const raid = raids[i];
+    raid.softres[0].edits[key] = { name: first, items: [chase] };
+    if (r.cla) {
+      raid.attendance.cla.push(key);
+      const p = parsed[r.date];
+      p.claPresence.push(key);
+      p.buffScores[key] = { [r.date]: { total: 100, scrolls: 0, elixir: 100, food: 100, wepOil: 100 } };
+    }
+  });
+  // Tonight: double reserve on the chase item (big bonus) + the item Bunzypoo reserved (no bonus for Bunzie)
+  return open => { if (open) open.softres[0].edits[key] = { name: first, items: [chase, chase, shared] }; };
+}
+
 // Write the fixture into this dashboard's storage (roster, raids, CLAs, glossary). Never calls softres.
 async function applyDemoFixture(fx) {
   _demoGlossaryMC();
@@ -6706,11 +6731,16 @@ async function applyDemoFixture(fx) {
     }
     raids.push(raid);
   }
+  // In-game test characters. Bunzypoo is in the fixture; Bunzie is added here, dashboard-only (his
+  // reserves are hand edits on the sheets, so softres is untouched). Tonight Bunzie double-reserves an
+  // item he has lost several times and also reserves Bunzypoo's item, where only Bunzypoo has a bonus —
+  // so a Gargul import from the dashboard shows per-item bonuses on both characters.
+  const bunzieTonight = addDemoBunzie(fx, players, raids, parsed);
   // The latest raid gets a Gargul post-raid export with one MS > OS award the loot master forgot
   // to log (an item nobody reserved, so leaving it out doesn't change anyone's bad luck protection).
   const lastFx = fx.raids[fx.raids.length - 1], lastRaid = raids[raids.length - 1];
   if (lastFx && lastRaid) {
-    const reserved = new Set(lastFx.reserves.flatMap(x => x.items.map(Number)));
+    const reserved = new Set([...lastFx.reserves.flatMap(x => x.items), ...Object.values(lastRaid.softres[0].edits).flatMap(e => e.items)].map(Number));
     const forgot = [...lastFx.loot].reverse().find(l => !l.sr && l.to !== '||de||' && !reserved.has(+l.item));
     if (forgot) {
       const j = lastRaid.loot.findIndex(l => l.itemKey === 'id:' + forgot.item && l.recipient === forgot.to);
@@ -6729,6 +6759,7 @@ async function applyDemoFixture(fx) {
   }
   // The open sheet becomes today's active raid
   if (fx.open) raids.push(normalizeRaid({ name: fx.open.name, date: todayMST(), optional: false, status: 'active', createdAt: new Date().toISOString(), softres: [sheetFor(fx.open, new Date().toISOString())], loot: [] }));
+  if (fx.open) bunzieTonight?.(raids[raids.length - 1]);
   await _putWf('roster.json', { players, excluded: [] });
   await _putWf('glossary.json', glossary);
   await _putWf('sr-rules.json', DEFAULT_SR_RULES);
