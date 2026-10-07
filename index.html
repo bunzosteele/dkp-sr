@@ -6015,15 +6015,13 @@ function renderRaidAttendance(el, raid) {
 }
 // Five-state attendance: default (calculated) → present → absent → severe absence → bench → default
 const ATT_CYCLE = [undefined, true, false, 'severe', 'bench'];
-const ATT_CYCLE_LABEL = ['Default', 'Present', 'Absent', 'Severe absence', 'Bench'];
 const ATT_LOOK = { present: ['✓', 'Present'], absent: ['✕', 'Absent'], severe: ['!', 'Severe absence'], bench: ['B', 'Benched'] };
 function attCycleHtml(raid, key, a) {
   const ov = raid.attendance.overrides[key], look = a.severe ? 'severe' : a.status;
   const [sym, lab] = ATT_LOOK[look];
-  let i = ATT_CYCLE.findIndex(v => v === ov); if (i < 0) i = 0;
   const title = `${raid.label}: ${ov === undefined ? `default — ${lab.toLowerCase()} (${ATT_SOURCE_LABEL[a.source] || a.source}${a.flag ? ', ' + a.flag : ''})` : `${lab} — set by hand`}${a.bench ? (srRules.bench.countsAsAttended ? ' · counts as attended' : ' · streak paused') : ''}`;
   return `<button type="button" class="att-cyc st-${look} ${ov === undefined ? 'def' : 'ov'} ${a.flag && ov === undefined ? 'flag' : ''}" ${writeToken ? '' : 'disabled'}
-    title="${escHtml(title)}${writeToken ? `&#10;Click → ${ATT_CYCLE_LABEL[(i + 1) % 5]} · right-click → ${ATT_CYCLE_LABEL[(i + 4) % 5]}` : ''}"
+    title="${escHtml(title)}"
     onclick="event.stopPropagation();cycleAttendance('${raid.id}','${key}',1)" oncontextmenu="event.preventDefault();event.stopPropagation();cycleAttendance('${raid.id}','${key}',-1)">${ov === undefined && look === 'absent' ? '·' : sym}</button>`;
 }
 function cycleAttendance(raidId, key, dir = 1) {
