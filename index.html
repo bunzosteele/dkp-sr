@@ -1736,6 +1736,14 @@
 @media (max-width: 640px) { .rh-table td { display: inline-block; border: 0; padding: 2px 6px 2px 0; } .rh-table tr { display: block; border-bottom: 1px solid var(--border); padding: 5px 0; } }
 .rh-sum-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold-light); }
 .rh-arrow { color: var(--gold); font-size: 14px; }
+.bench-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 10px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 6px; }
+.bench-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold-light); margin-right: 4px; }
+.bench-chip .att-src { margin-left: 4px; }
+.bench-tag { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #9fb4c8; border: 1px solid rgba(159,180,200,0.45); border-radius: 4px; padding: 0 5px; }
+.raid-dot.bench { background: transparent; border-color: #8ea3b8; border-style: dashed; }
+.att-b { display: inline-block; min-width: 18px; font-size: 14px; font-weight: bold; color: #9fb4c8; border: 1px dashed #8ea3b8; border-radius: 3px; cursor: pointer; line-height: 16px; }
+.att-b.ov { border-style: solid; border-color: var(--gold); }
+.att-q { color: #f0b060; font-weight: bold; cursor: help; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -1861,6 +1869,7 @@ const DEFAULT_SR_RULES = {
   buff:   { enabled: true, threshold: 80 },
   streak: { enabled: true, every: 5 },
   blp:    { enabled: true, step: 20 },
+  bench:  { countsAsAttended: true },
 };
 let srRules = JSON.parse(JSON.stringify(DEFAULT_SR_RULES));
 
@@ -3622,7 +3631,8 @@ async function loadRulesFromRepo() {
 function mergeRules(d) {
   const r = JSON.parse(JSON.stringify(DEFAULT_SR_RULES));
   if (d.perRaid != null) r.perRaid = Math.max(0, +d.perRaid || 0);
-  for (const k of ['buff', 'streak', 'blp']) if (d[k]) Object.assign(r[k], d[k]);
+  for (const k of ['buff', 'streak', 'blp', 'bench']) if (d[k]) Object.assign(r[k], d[k]);
+  r.bench.countsAsAttended = !!r.bench.countsAsAttended;
   r.buff.threshold = Math.min(100, Math.max(0, +r.buff.threshold || 0));
   r.streak.every   = Math.max(1, Math.round(+r.streak.every || 1));
   r.blp.step       = Math.max(0, +r.blp.step || 0);
@@ -4153,12 +4163,16 @@ function reserveLimitOf(raid) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Attendance — one answer per raid per raider, with where it came from:
-//   1. manual override                         (source: 'manual')
-//   2. CLA presence, once a CLA is attached    (source: 'cla')
-//   3. active raid → every active raider       (source: 'assumed')
-//   4. past raid, no CLA and no manual input   (source: 'softres': anyone who reserved)
+// Attendance — one answer per raid per raider: status present | bench | absent, plus a source:
+//   1. manual mark (true / false / 'bench')    (source: 'manual')
+//   2. CLA presence, once a CLA is attached    (source: 'cla') — not in the CLA but signed up
+//      as Bench on Raid-Helper → bench          (source: 'raidhelper')
+//   3. Raid-Helper sign-ups, when linked        (source: 'raidhelper', see raidHelperExpectation)
+//   4. active raid → every active raider       (source: 'assumed')
+//   5. past raid, no CLA and no manual input   (source: 'softres': anyone who reserved)
 //      past raid, no CLA, some manual input    (source: 'manual': unlisted = absent)
+// `present` = counts as attended: true for present, and for bench when the SR rule says so.
+// Reserves are only ever charged to status 'present' (nobody pays for a raid they weren't in).
 // ═════════════════════════════════════════════════════════════════════════════
 function raidClaSet(raid) {
   const live = raid.claLabel ? claPlayersByLabel[raid.claLabel] : null;
@@ -4173,28 +4187,50 @@ function isActiveRaiderFor(key, raid) {
   const before = pastRaids().filter(r => r.date < raid.date && !r.optional && (!p.addedAt || r.date >= p.addedAt));
   let missed = 0;
   for (let i = before.length - 1; i >= 0; i--) {
-    if (attendanceOf(before[i], key).present) break;
+    const a = attendanceOf(before[i], key); if (a.present || a.bench) break;
     missed++;
   }
   return missed <= 2;
 }
 
 const _attMemo = new Map();
+function _att(status, source, flag) {
+  return { status, source, present: status === 'present' || (status === 'bench' && !!srRules.bench?.countsAsAttended), bench: status === 'bench', ...(flag ? { flag } : {}) };
+}
 function attendanceOf(raid, key) {
   const mk = raid.id + '|' + key;
   if (_attMemo.has(mk)) return _attMemo.get(mk);
   let res;
   const ov = raid.attendance.overrides[key];
-  if (ov !== undefined) res = { present: !!ov, source: 'manual' };
+  if (ov !== undefined) res = _att(ov === 'bench' ? 'bench' : ov ? 'present' : 'absent', 'manual');
   else {
-    const cla = raidClaSet(raid);
-    if (cla) res = { present: cla.has(key), source: 'cla' };
-    else if (raid.status === 'active') res = { present: isActiveRaiderFor(key, raid), source: 'assumed' };
-    else if (Object.keys(raid.attendance.overrides).length) res = { present: false, source: 'manual' };
-    else res = { present: reservedCount(raid, key) > 0, source: 'softres' };
+    const cla = raidClaSet(raid), rhx = raid.raidHelper ? raidHelperExpectation(raid) : null;
+    if (cla) res = cla.has(key) ? _att('present', 'cla') : rhx?.[key]?.status === 'bench' ? _att('bench', 'raidhelper') : _att('absent', 'cla');
+    else if (rhx) { const x = rhx[key]; res = x ? _att(x.status, 'raidhelper', x.flag) : reservedCount(raid, key) > 0 ? _att('present', 'raidhelper', 'no sign-up') : _att('absent', 'raidhelper', 'no sign-up'); }
+    else if (raid.status === 'active') res = _att(isActiveRaiderFor(key, raid) ? 'present' : 'absent', 'assumed');
+    else if (Object.keys(raid.attendance.overrides).length) res = _att('absent', 'manual');
+    else res = _att(reservedCount(raid, key) > 0 ? 'present' : 'absent', 'softres');
   }
   _attMemo.set(mk, res);
   return res;
+}
+// What Raid-Helper says about each matched raider: { key: { status, flag } }
+//   confirmed / in comp / signed (incl. Late) → present ("?" when unconfirmed or tentative)
+//   cancelled in the comp, or signed Absence → absent · Bench sign-up → bench
+// Not signed up at all: present only if they reserved (decided in attendanceOf).
+const _rhxMemo = new Map();
+function raidHelperExpectation(raid) {
+  if (_rhxMemo.has(raid.id)) return _rhxMemo.get(raid.id);
+  const out = {}, rank = { present: 3, bench: 2, absent: 1 };
+  for (const r of raidHelperRoster(raid) || []) {
+    if (!r.raider) continue;
+    const status = r.status === 'absence' || r.comp === 'cancelled' ? 'absent' : r.status === 'bench' ? 'bench' : 'present';
+    const flag = r.comp === 'cancelled' ? 'cancelled' : r.status === 'absence' ? 'signed absent' : status === 'present' && (r.comp === 'unconfirmed' || r.status === 'tentative') ? 'unconfirmed' : r.status === 'late' ? 'late' : null;
+    const cur = out[r.key];
+    if (!cur || rank[status] > rank[cur.status]) out[r.key] = { status, flag }; // a raider's best sign-up wins (alt + main)
+  }
+  _rhxMemo.set(raid.id, out);
+  return out;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -4209,7 +4245,7 @@ function attendanceOf(raid, key) {
 //   Manual adjustments apply on their date (before that day's raid) and floor at 0.
 // ═════════════════════════════════════════════════════════════════════════════
 let _derived = null;
-function invalidateDerived() { _derived = null; _attMemo.clear(); _nameIndex = null; }
+function invalidateDerived() { _derived = null; _attMemo.clear(); _rhxMemo.clear(); _nameIndex = null; }
 
 function buffScoreFor(playerName, date) {
   const v = rawBuffScoresByDate(playerName)[date];
@@ -4233,26 +4269,28 @@ function computeSrLedger() {
       while (ai < adj.length && (adj[ai].date || '') <= r.date) applyAdj(adj[ai++]);
       const att = attendanceOf(r, key);
       let base = 0, streakBonus = 0, buffBonus = 0, buffScore = null;
-      if (att.present) {
+      if (att.present) { // attended — or benched, when bench counts as attended
         base = srRules.perRaid;
         streak++;
         if (srRules.streak.enabled && streak % srRules.streak.every === 0) streakBonus = 1;
-        if (r.status === 'past') {
+        if (r.status === 'past' && !att.bench) { // no CLA score for someone on the bench
           buffScore = buffScoreFor(p.name, r.date);
           if (srRules.buff.enabled && buffScore !== null && buffScore >= srRules.buff.threshold) buffBonus = 1;
         }
+      } else if (att.bench) {
+        // bench that doesn't count as attended: earns nothing, but the streak is paused, not broken
       } else if (!r.optional) {
         streak = 0;
       }
       bal += base + streakBonus + buffBonus;
       const reserved = reservedCount(r, key);
       let spent = 0, over = 0;
-      if (att.present && reserved) {
+      if (att.status === 'present' && reserved) { // nobody pays for a raid they weren't in (bench included)
         if (r.status === 'past') { spent = Math.min(reserved, bal); over = reserved - spent; bal -= spent; }
         else { spent = reserved; over = Math.max(0, reserved - bal); bal -= reserved; }
       }
       events.push({ type: 'raid', raidId: r.id, date: r.date, name: r.name, status: r.status, optional: r.optional,
-        present: att.present, source: att.source, base, streakBonus, buffBonus, buffScore, streak,
+        present: att.present, bench: att.bench, attStatus: att.status, source: att.source, base, streakBonus, buffBonus, buffScore, streak,
         reserved, spent, over, balance: bal });
     }
     while (ai < adj.length) applyAdj(adj[ai++]);
@@ -4284,10 +4322,10 @@ function computeBlp() {
       for (const ik of Object.keys(items)) before[r.id][pk][ik] = losses[pk]?.[ik] || 0;
     }
     for (const [pk, items] of Object.entries(res)) {
-      const present = attendanceOf(r, pk).present;
+      const att = attendanceOf(r, pk), present = att.status === 'present';
       for (const ik of Object.keys(items)) {
         const w = winners[ik];
-        if (!present) { outcome[r.id][pk][ik] = 'absent'; continue; }
+        if (!present && !w?.has(pk)) { outcome[r.id][pk][ik] = att.bench ? 'bench' : 'absent'; continue; }
         if (w?.has(pk)) { outcome[r.id][pk][ik] = 'won'; }
         else if (w && w.size) { (losses[pk] ||= {})[ik] = (losses[pk][ik] || 0) + 1; outcome[r.id][pk][ik] = 'lost'; }
         else outcome[r.id][pk][ik] = r.status === 'active' ? 'pending' : 'nodrop'; // still to drop tonight
@@ -4732,9 +4770,10 @@ function buildRenderData() {
     if (!p.role || rosterData.excluded?.includes(p.name)) continue;
     const key = normalizeName(p.name);
     const flags = raids.map(r => attendanceOf(r, key).present);
+    const bench = raids.map(r => attendanceOf(r, key).bench);
     const trueIdx = flags.map((b, i) => b ? i : -1).filter(i => i >= 0);
     let rec;
-    if (!trueIdx.length) rec = { name: p.name, attended: 0, window: 0, pct: null, flags, n, inactive: false };
+    if (!trueIdx.length) rec = { name: p.name, attended: 0, window: 0, pct: null, flags, bench, n, inactive: false };
     else {
       const first = trueIdx[0], last = trueIdx[trueIdx.length - 1];
       const missedAfter = raids.slice(last + 1).filter(r => !r.optional).length;
@@ -4745,7 +4784,7 @@ function buildRenderData() {
         if (flags[i]) { attended++; window++; }
         else if (!raids[i].optional) window++;
       }
-      rec = { name: p.name, attended, window, pct: window ? attended / window * 100 : null, flags, n, first, last, inactive };
+      rec = { name: p.name, attended, window, pct: window ? attended / window * 100 : null, flags, bench, n, first, last, inactive };
     }
     (roleMap[p.role] ||= []).push(rec);
   }
@@ -4828,6 +4867,7 @@ function raidDotsHtml(p, raids) {
     const label = `${r.label}${r.optional ? ' (optional)' : ''}`;
     if (p.pct === null) html += `<div class="raid-dot absent" title="${label}"></div>`;
     else if (i < p.first) html += `<div class="raid-dot inactive"></div>`;
+    else if (p.bench?.[i]) html += `<div class="raid-dot bench" title="${label}: Benched${srRules.bench.countsAsAttended ? ' — counts as attended' : ' — streak paused'}"></div>`;
     else if (!p.flags[i]) {
       if (p.inactive && i > p.last) html += `<div class="raid-dot inactive"></div>`;
       else html += `<div class="raid-dot absent${r.optional ? ' optional' : ''}" title="${label}: Absent${r.optional ? ' — optional, doesn\'t count' : ''}"></div>`;
@@ -4974,13 +5014,13 @@ function lootChipHtml(l) {
 
 const OUTCOME_LABEL = {
   won: ['Won', C1], lost: ['Lost roll', C5], nodrop: ['Didn\'t drop', 'var(--text-dim)'],
-  absent: ['Absent', 'var(--text-dim)'], pending: ['Active', 'var(--gold)'],
+  absent: ['Absent', 'var(--text-dim)'], bench: ['Benched', 'var(--text-dim)'], pending: ['Active', 'var(--gold)'],
 };
 
 function raiderRaidListHtml(key, s, hist, loot) {
   const histByRaid = {}; for (const x of hist) (histByRaid[x.raid.id] ||= []).push(x);
   const lootByRaid = {}; for (const l of loot) (lootByRaid[l.raid.id] ||= []).push(l);
-  const rows = s.events.slice().reverse().filter(e => e.type === 'adjust' || e.present || histByRaid[e.raidId]?.length);
+  const rows = s.events.slice().reverse().filter(e => e.type === 'adjust' || e.present || e.bench || histByRaid[e.raidId]?.length);
   if (!rows.length) return '<em class="no-loot">No raids yet</em>';
   return `<div class="raid-acc-list">${rows.map(e => {
     if (e.type === 'adjust') return `<div class="raid-acc adj"><span class="acc-date">${e.date ? fmtShort(e.date) : ''}</span>
@@ -4992,8 +5032,9 @@ function raiderRaidListHtml(key, s, hist, loot) {
     const icons = [results.includes('won') ? '<span title="Won an SR item" style="color:' + C1 + ';">✓</span>' : '',
                    results.includes('lost') ? '<span title="Lost an SR roll" style="color:' + C5 + ';">✗</span>' : ''].join('');
     const parts = [];
+    if (e.bench) parts.push(`<span class="bench-tag">benched</span>`);
     if (e.present) parts.push(`<span style="color:${C1};">+${earned} SR${earned === 1 ? '' : 's'}</span>`);
-    else parts.push('<span style="color:var(--text-dim);">absent</span>');
+    else if (!e.bench) parts.push('<span style="color:var(--text-dim);">absent</span>');
     if (e.spent) parts.push(`${e.spent} spent`);
     if (e.over) parts.push(`<span style="color:${C5};">${e.over} over</span>`);
     if (won.length) parts.push(`${won.length} loot`);
@@ -5001,9 +5042,9 @@ function raiderRaidListHtml(key, s, hist, loot) {
     const detail = `
       <div class="acc-body">
         <div class="acc-line"><span class="acc-k">SRs earned</span><span>${e.present
-          ? `+${earned} ${['attendance', e.buffBonus && 'consumes', e.streakBonus && 'streak'].filter(Boolean).join(', ')}`
-          : 'none — not present'}</span></div>
-        <div class="acc-line"><span class="acc-k">SRs used</span><span>${e.reserved ? `${e.reserved}${e.present ? '' : ' (not charged — absent)'}${e.over ? ` · <span style="color:${C5};">${e.status === 'active' ? `${e.over} more than available` : `${e.over} forgiven (balance can't go below 0)`}</span>` : ''}` : 'none'}</span></div>
+          ? `+${earned} ${[e.bench ? 'attendance (bench)' : 'attendance', e.buffBonus && 'consumes', e.streakBonus && 'streak'].filter(Boolean).join(', ')}`
+          : e.bench ? 'none — benched (streak paused)' : 'none — not present'}</span></div>
+        <div class="acc-line"><span class="acc-k">SRs used</span><span>${e.reserved ? `${e.reserved}${e.attStatus === 'present' ? '' : e.bench ? ' (not charged — benched)' : ' (not charged — absent)'}${e.over ? ` · <span style="color:${C5};">${e.status === 'active' ? `${e.over} more than available` : `${e.over} forgiven (balance can't go below 0)`}</span>` : ''}` : 'none'}</span></div>
         ${res.length ? `<div class="acc-line"><span class="acc-k">Reserves</span><span class="acc-res">${res.map(x => {
             const [lab, col] = OUTCOME_LABEL[x.outcome] || [x.outcome, 'var(--text-dim)'];
             const rm = x.roll.max;
@@ -5249,7 +5290,7 @@ function renderRaidsPanel() {
     ${past.length ? `<div style="overflow-x:auto;"><table class="mini-table raid-list"><thead><tr><th>Date</th><th>Raid</th><th>Present</th><th>Reserves</th><th>Loot</th><th>Gargul</th><th>CLA</th></tr></thead><tbody>
       ${past.map(r => `<tr onclick="openRaid('${r.id}')" style="cursor:pointer;">
         <td>${fmtShort(r.date)}</td><td>${escHtml(r.name)} ${r.optional ? '<span class="tag-opt">optional</span>' : ''}</td>
-        <td>${rosterKeys().filter(k => attendanceOf(r, k).present).length}</td>
+        <td>${rosterKeys().filter(k => attendanceOf(r, k).status === 'present').length}</td>
         <td>${Object.values(raidReserves(r)).reduce((a, m) => a + Object.values(m).reduce((x, y) => x + y, 0), 0)}</td>
         <td>${r.loot.length}</td><td>${gargulBadgeHtml(r) || '<span style="color:var(--text-dim);">—</span>'}</td><td>${r.claLabel ? '✓' : '<span style="color:var(--text-dim);">—</span>'}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="gl-empty">None yet.</div>'}`;
@@ -5595,9 +5636,9 @@ function renderLootItemView(el, raid, itemKey) {
       const losses = roll.losses || 0, rm = roll.max;
       const st = rp ? srStats(rp.name) : null;
       const ev = st?.events.find(e => e.raidId === raid.id);
-      const present = attendanceOf(raid, key).present;
+      const att = attendanceOf(raid, key), present = att.status === 'present';
       const over = ev?.over > 0;
-      return { key, name, count, losses, rm, roll, present, over, ev, rp, got: alreadyThisRaid.has(key) };
+      return { key, name, count, losses, rm, roll, present, bench: att.bench, over, ev, rp, got: alreadyThisRaid.has(key) };
     }).sort((a, b) => b.rm - a.rm || a.name.localeCompare(b.name));
     srHtml = `<div class="sr-box ${gearSlots ? 'with-cur' : ''}">
       <div class="gl-col-title">Soft reserved by ${reservers.length}</div>
@@ -5607,7 +5648,7 @@ function renderLootItemView(el, raid, itemKey) {
         ${gearSlots ? `<span class="sr-cur">${currentGearHtml(r.name, gearSlots)}</span>` : ''}
         <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
         <span class="sr-bal">${r.over && writeToken ? `<span class="over-chip" title="Reserved ${r.ev.reserved} SRs this raid but only had ${r.ev.reserved - r.ev.over}">⚠ OVER-RESERVED ${r.ev.reserved}/${r.ev.reserved - r.ev.over}</span>` : ''}
-          ${!r.present ? '<span class="tag-warn">not marked present</span>' : ''}${r.got ? '<span class="tag-ok">✓ awarded</span>' : ''}</span>
+          ${r.bench ? '<span class="bench-tag">benched</span>' : !r.present ? '<span class="tag-warn">not marked present</span>' : ''}${r.got ? '<span class="tag-ok">✓ awarded</span>' : ''}</span>
         <span style="text-align:right;">${r.got ? '' : assignBtn(r.name, true)}</span>
       </div>`).join('')}
     </div>`;
@@ -5617,7 +5658,7 @@ function renderLootItemView(el, raid, itemKey) {
   const pool = lastRenderData.roles.flatMap(r => r.players);
   const eligible = pool.filter(p => {
     const cls = classMap[normalizeName(p.name)];
-    return cls && (!classes.length || classes.includes(cls)) && attendanceOf(raid, normalizeName(p.name)).present;
+    return cls && (!classes.length || classes.includes(cls)) && attendanceOf(raid, normalizeName(p.name)).status === 'present';
   });
   const reserverSet = new Set(reservers.map(r => r.key));
   const others = eligible.filter(p => !reserverSet.has(normalizeName(p.name)))
@@ -5911,27 +5952,56 @@ async function addReserveManual(raidId, sheetId) {
 }
 
 // ── Attendance ──────────────────────────────────────────────────
-const ATT_SOURCE_LABEL = { manual: 'Manual', cla: 'CLA', assumed: 'Assumed (active)', softres: 'From reserves' };
+const ATT_SOURCE_LABEL = { manual: 'Manual', cla: 'CLA', assumed: 'Assumed (active)', softres: 'From reserves', raidhelper: 'Raid-Helper' };
 function renderRaidAttendance(el, raid) {
   const players = rosterData.players.filter(p => !rosterData.excluded?.includes(p.name))
     .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name));
-  const present = players.filter(p => attendanceOf(raid, normalizeName(p.name)).present).length;
-  el.innerHTML = `${raidHelperSignupsHtml(raid)}<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px;flex-wrap:wrap;">
-      <span style="font-family:'Cinzel',serif;color:var(--gold-light);">${present} present</span>
+  const atts = players.map(p => [p, normalizeName(p.name), attendanceOf(raid, normalizeName(p.name))]);
+  const present = atts.filter(([, , a]) => a.status === 'present').length;
+  const benched = atts.filter(([, , a]) => a.bench);
+  const flagged = atts.filter(([, , a]) => a.status === 'present' && a.flag);
+  const flagTitle = { unconfirmed: 'Not confirmed in the Raid-Helper comp yet', 'no sign-up': 'No Raid-Helper sign-up — expected because they reserved', late: 'Signed up as Late' };
+  el.innerHTML = `${raidHelperSignupsHtml(raid)}
+    <div class="bench-line">
+      <span class="bench-title">Benched</span>
+      ${benched.map(([p, k, a]) => `<span class="rd-alias bench-chip" title="${ATT_SOURCE_LABEL[a.source] || a.source}${srRules.bench.countsAsAttended ? ' · counts as attended, not charged for reserves' : ' · earns nothing, streak paused, not charged for reserves'}">${playerNameHtml(p.name)}${a.source !== 'manual' ? ` <span class="att-src">${ATT_SOURCE_LABEL[a.source]}</span>` : ''}<button class="x-btn write-gated-hide" onclick="unbenchRaider('${raid.id}','${k}')" title="Not benched">✕</button></span>`).join('') || '<span class="iv-dim">nobody</span>'}
+      <span class="write-gated-hide" style="display:inline-flex;gap:6px;align-items:center;"><span id="benchAc" class="rd-ac"></span><button class="ghost-btn" onclick="benchRaider('${raid.id}')">Bench</button></span>
     </div>
-    <div class="att-grid">${players.map(p => {
-      const k = normalizeName(p.name); const a = attendanceOf(raid, k);
+    <div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px;flex-wrap:wrap;">
+      <span style="font-family:'Cinzel',serif;color:var(--gold-light);">${present} present</span>
+      ${benched.length ? `<span class="iv-dim">· ${benched.length} benched</span>` : ''}
+      ${flagged.length ? `<span class="iv-dim">· ${flagged.length} with a “?”</span>` : ''}
+    </div>
+    <div class="att-grid">${atts.filter(([, , a]) => !a.bench).map(([p, k, a]) => {
       const ov = raid.attendance.overrides[k];
-      return `<label class="att-tile ${a.present ? 'on' : ''} ${ov !== undefined ? 'ov' : ''}">
-        <input type="checkbox" class="write-gated" ${a.present ? 'checked' : ''} onchange="setRaidAttendance('${raid.id}','${k}',this.checked)">
-        <span>${playerNameHtml(p.name)}</span><span class="att-src">${ATT_SOURCE_LABEL[a.source] || a.source}</span>
+      const on = a.status === 'present';
+      return `<label class="att-tile ${on ? 'on' : ''} ${ov !== undefined ? 'ov' : ''}">
+        <input type="checkbox" class="write-gated" ${on ? 'checked' : ''} onchange="setRaidAttendance('${raid.id}','${k}',this.checked)">
+        <span>${playerNameHtml(p.name)}${a.flag && on ? ` <span class="att-q" title="${escHtml(flagTitle[a.flag] || a.flag)}">?</span>` : ''}</span><span class="att-src" title="${escHtml(a.flag || '')}">${ATT_SOURCE_LABEL[a.source] || a.source}${a.flag && !on ? ` · ${escHtml(a.flag)}` : ''}</span>
         ${ov !== undefined ? `<button class="x-btn write-gated-hide" title="Clear override" onclick="event.preventDefault();setRaidAttendance('${raid.id}','${k}',null)">↺</button>` : ''}
       </label>`; }).join('')}</div>`;
+  const c = document.getElementById('benchAc');
+  if (c && writeToken) buildAutocomplete({ container: c, inputId: 'benchAcIn', placeholder: '+ bench someone', items: atts.filter(([, , a]) => !a.bench).map(([p, k]) => ({ value: k, label: p.name })), renderOption: v => playerNameHtml(v.label) });
+}
+function benchRaider(raidId) {
+  const k = document.getElementById('benchAcIn')?.dataset.value;
+  if (!k) { flash('Pick a raider from the list.', 'error'); return; }
+  setRaidAttendance(raidId, k, 'bench');
+}
+// Clear a manual bench; a bench that came from Raid-Helper/CLA is overridden to present
+function unbenchRaider(raidId, k) {
+  const raid = getRaid(raidId);
+  if (raid.attendance.overrides[k] === 'bench') { delete raid.attendance.overrides[k]; invalidateDerived(); if (attendanceOf(raid, k).bench) raid.attendance.overrides[k] = true; }
+  else raid.attendance.overrides[k] = true;
+  invalidateDerived();
+  clearTimeout(_attSaveTimer);
+  _attSaveTimer = setTimeout(() => saveRaids().catch(() => {}), 700);
+  refreshAll();
 }
 let _attSaveTimer = null;
 function setRaidAttendance(raidId, key, value) {
   const raid = getRaid(raidId);
-  if (value === null) delete raid.attendance.overrides[key]; else raid.attendance.overrides[key] = !!value;
+  if (value === null) delete raid.attendance.overrides[key]; else raid.attendance.overrides[key] = value === 'bench' ? 'bench' : !!value;
   invalidateDerived();
   clearTimeout(_attSaveTimer);
   _attSaveTimer = setTimeout(() => saveRaids().catch(() => {}), 700);
@@ -6060,7 +6130,8 @@ function renderRosterPanel() {
       <td class="player-name sticky-col" onclick="toggleLoot(this, '${jsAttr(p.name)}')" style="cursor:pointer;"><span class="loot-arrow">▸</span> ${playerNameHtml(p.name)}${p.isAlt ? ' <span class="tag-opt">alt</span>' : ''}</td>
       <td class="priority-cell">${srCellHtml(p.name)}</td>
       ${raids.map(r => { const a = attendanceOf(r, key); const ov = r.attendance.overrides[key] !== undefined;
-        return `<td style="text-align:center;padding:4px;"><input type="checkbox" class="write-gated att-cb ${ov ? 'ov' : ''}" ${a.present ? 'checked' : ''} title="${ATT_SOURCE_LABEL[a.source] || a.source}" onchange="setRaidAttendance('${r.id}','${key}',this.checked)"></td>`; }).join('')}
+        if (a.bench) return `<td style="text-align:center;padding:4px;"><span class="att-b ${ov ? 'ov' : ''}" title="Benched (${ATT_SOURCE_LABEL[a.source] || a.source})${srRules.bench.countsAsAttended ? ' — counts as attended' : ''}" onclick="openRaid('${r.id}','attendance')">B</span></td>`;
+        return `<td style="text-align:center;padding:4px;"><input type="checkbox" class="write-gated att-cb ${ov ? 'ov' : ''}" ${a.status === 'present' ? 'checked' : ''} title="${ATT_SOURCE_LABEL[a.source] || a.source}" onchange="setRaidAttendance('${r.id}','${key}',this.checked)"></td>`; }).join('')}
     </tr>`;
   }
   panel.innerHTML = `
@@ -6075,7 +6146,7 @@ function renderRosterPanel() {
           <th class="sticky-col" style="text-align:left;min-width:150px;background:var(--bg);">Player</th><th style="text-align:center;">SRs</th>
           ${raids.map(r => `<th style="text-align:center;min-width:54px;cursor:pointer;" onclick="openRaid('${r.id}','attendance')" title="${escHtml(r.name)}${r.optional ? ' (optional)' : ''}${r.status === 'active' ? ' — ACTIVE' : ''}">
             <div class="${r.status === 'active' ? 'col-active' : ''}">${r.label}</div>${r.optional ? '<div class="tag-opt" style="font-size:11px;">opt</div>' : ''}
-            <div style="color:var(--gold-dim);font-size:13px;">${rosterKeys().filter(k => attendanceOf(r, k).present).length}</div></th>`).join('')}
+            <div style="color:var(--gold-dim);font-size:13px;">${rosterKeys().filter(k => attendanceOf(r, k).status === 'present').length}</div></th>`).join('')}
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -6417,6 +6488,8 @@ function renderRulesPanel() {
       <div class="rule-ctl">${tog('ruBuffOn', r.buff.enabled)}<input id="ruBuffTh" type="number" min="0" max="100" class="gl-input rule-num" value="${r.buff.threshold}" oninput="rulesDirty()"><span>%</span></div></div>
     <div class="rule"><div class="rule-text"><b>Attendance streak bonus</b><span>+1 SR on every Nth raid in a row (N, 2N, 3N…). Missing a regular raid resets the streak; optional raids never break it but count when attended.</span></div>
       <div class="rule-ctl">${tog('ruStreakOn', r.streak.enabled)}<span>every</span><input id="ruStreakN" type="number" min="1" class="gl-input rule-num" value="${r.streak.every}" oninput="rulesDirty()"><span>raids</span></div></div>
+    <div class="rule"><div class="rule-text"><b>Benched counts as attended</b><span>On: a raider on the bench earns the base SR for the raid, it counts toward attendance, and their streak keeps going. Off: they earn nothing that night, but their streak is paused rather than broken. Either way a benched raider is never charged for reserves and gets no consumes bonus.</span></div>
+      <div class="rule-ctl">${tog('ruBenchOn', r.bench.countsAsAttended)}</div></div>
     <div class="rule"><div class="rule-text"><b>Bad luck protection</b><span>Each time a raider reserves an item and loses it to someone else, their roll for that item grows by this much (100 → 120 → 140…). Resets when they win it. Tracked per item. In game, the raid's Gargul import carries these rolls and the loot master's DBS Bonus Rolls addon applies them item by item.</span></div>
       <div class="rule-ctl">${tog('ruBlpOn', r.blp.enabled)}<span>+</span><input id="ruBlpStep" type="number" min="0" class="gl-input rule-num" value="${r.blp.step}" oninput="rulesDirty()"><span>per loss</span></div></div>
     <div style="display:flex;gap:8px;margin-top:18px;" class="write-gated-hide">
@@ -6432,6 +6505,7 @@ function readRulesForm() {
     buff: { enabled: document.getElementById('ruBuffOn').checked, threshold: document.getElementById('ruBuffTh').value },
     streak: { enabled: document.getElementById('ruStreakOn').checked, every: document.getElementById('ruStreakN').value },
     blp: { enabled: document.getElementById('ruBlpOn').checked, step: document.getElementById('ruBlpStep').value },
+    bench: { countsAsAttended: document.getElementById('ruBenchOn').checked },
   });
 }
 function rulesDirty() {
@@ -7270,6 +7344,13 @@ async function applyDemoFixture(fx) {
       const k = normalizeName(nm);
       raid.attendance.cla.push(k); p.claPresence.push(k); p.canonicalNames[k] = nm;
     }
+  }
+  // A benched raider on the latest CLA raid: missing from the CLA, marked bench by hand
+  if (lastClaFx) {
+    const raid = raids[fx.raids.indexOf(lastClaFx)], inCla = new Set(lastClaFx.present.map(normalizeName));
+    const prev = fx.raids[fx.raids.indexOf(lastClaFx) - 1];
+    const b = players.find(p => !inCla.has(normalizeName(p.name)) && prev?.present.includes(p.name));
+    if (b) raid.attendance.overrides[normalizeName(b.name)] = 'bench';
   }
   // The latest raid gets a Gargul post-raid export with one MS > OS award the loot master forgot
   // to log (an item nobody reserved, so leaving it out doesn't change anyone's bad luck protection).
