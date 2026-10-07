@@ -1721,6 +1721,21 @@
 @media (max-width: 640px) { .rd-table td { display: block; border: 0; padding: 3px 4px; } .rd-table tr { display: block; border-bottom: 1px solid var(--border); padding: 6px 0; } .rd-table thead { display: none; } .rd-actions { justify-content: flex-start; } }
 
 .compact-table th { white-space: nowrap; letter-spacing: 0.08em; }
+.raid-new-grid .nr-rh { grid-column: 1 / -1; }
+.nr-rh-status { margin-top: 8px; font-size: 16px; min-height: 0; }
+.nr-rh-status:empty { display: none; }
+.rh-line { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 8px; font-size: 16px; }
+.rh-link { color: var(--gold-light); text-decoration: none; }
+.rh-counts { color: var(--text); }
+.raid-card-stats .rh-counts { color: var(--text-dim); }
+.rh-signups { margin: 4px 0 14px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+.rh-signups summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; }
+.rh-signups summary::-webkit-details-marker { display: none; }
+.rh-table { margin-top: 8px; }
+.rh-table td { vertical-align: middle; }
+@media (max-width: 640px) { .rh-table td { display: inline-block; border: 0; padding: 2px 6px 2px 0; } .rh-table tr { display: block; border-bottom: 1px solid var(--border); padding: 5px 0; } }
+.rh-sum-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold-light); }
+.rh-arrow { color: var(--gold); font-size: 14px; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -3999,6 +4014,11 @@ function resolveRosterKey(name, discordId) {
   const base = baseName(name), nk = normalizeName(base);
   if (_nameIndex.memo.has(nk)) return _nameIndex.memo.get(nk);
   let res = _nameIndex.full.get(nk) || _nameIndex.alias.get(nk) || null;
+  if (!res && /[\/|,&+]/.test(base)) {
+    // Discord nicknames like "Rikko/Syca" or "Natura | Lux": one part should be a raider (or an AKA)
+    const hits = new Set(base.split(/[\/|,&+]/).map(x => x.trim()).filter(Boolean).map(x => resolveRosterKey(x)).filter(k => rosterPlayer(k)));
+    if (hits.size === 1) res = [...hits][0];
+  }
   if (!res) {
     // Try the whole string as one part, then each word of it
     const cands = new Set();
@@ -4024,12 +4044,15 @@ function isIgnoredName(name) {
 // Returns [{ key, name, seen: { softres|cla|loot|gargul: Set(raidId) }, suggest: [playerKey] }]
 function unrecognizedNames() {
   const out = new Map();
-  const note = (name, src, raidId) => {
+  const note = (name, src, raidId, extra) => {
     const nm = baseName(name); if (!nm || nm === '||de||') return;
-    const k = resolveRosterKey(nm);
-    if (rosterPlayer(k) || isIgnoredName(nm)) return;
-    const e = out.get(k) || { key: k, name: nm, seen: {} };
+    const k = resolveRosterKey(nm, extra?.userId);
+    if (rosterPlayer(k) || isIgnoredName(nm) || (extra?.userId && isIgnoredName(extra.userId))) return;
+    const e = out.get(k) || { key: k, name: nm, seen: {}, discordIds: new Set() };
     (e.seen[src] ||= new Set()).add(raidId);
+    if (extra?.userId) e.discordIds.add(extra.userId);
+    if (extra?.cls && !e.cls) e.cls = extra.cls;
+    if (extra?.role && !e.role) e.role = extra.role;
     out.set(k, e);
   };
   for (const r of raidsData.raids) {
@@ -4038,6 +4061,7 @@ function unrecognizedNames() {
     for (const k of (live && live.size ? [...live] : r.attendance.cla)) note(canonicalNames[k] || k, 'cla', r.id);
     for (const l of r.loot) note(l.recipient, 'loot', r.id);
     for (const a of r.gargul?.awards || []) { if (!a.de) note(a.to, 'gargul', r.id); for (const x of a.rolls || []) note(x.player, 'gargul', r.id); }
+    for (const u of r.raidHelper?.signUps || []) note(u.name, 'raidhelper', r.id, { userId: u.userId, cls: rhClassOf(u), role: RH_ROLE[u.roleName] || '' });
   }
   for (const e of out.values()) e.suggest = suggestRaidersFor(e.name);
   return [...out.values()].sort((a, b) => _seenCount(b) - _seenCount(a) || a.name.localeCompare(b.name));
@@ -4330,6 +4354,94 @@ function gargulImportPayload(raid) {
     wf: { v: 1, label: raid.name || raid.id, blp },
   };
 }
+// ═════════════════════════════════════════════════════════════════════════════
+// Raid-Helper — sign-ups + comp for a raid, from the public v4 API (CORS-open, no key).
+// raid.raidHelper is ALWAYS our own copy: each sync overwrites it, a failed sync keeps the
+// last good copy, and End Raid takes a final one — nothing depends on Raid-Helper keeping it.
+// ═════════════════════════════════════════════════════════════════════════════
+const RH_API = 'https://raid-helper.xyz/api/v4';
+const RH_ROLE = { Tanks: 'Tanks', Melee: 'Physical DPS', Ranged: 'Ranged DPS', Healers: 'Healers' };
+const RH_SPECIAL = ['Absence', 'Bench', 'Late', 'Tentative'];
+// The template's "Tank" pseudo-class: the real class from the spec name, else the colour
+const RH_TANK_SPEC = { Protection: 'Warrior', Protection1: 'Paladin', Guardian: 'Druid', Feral: 'Druid' };
+const RH_CLASS_COLOR = { '#C69B6D': 'Warrior', '#F48CBA': 'Paladin', '#FF7C0A': 'Druid' };
+function raidHelperIdFromUrl(u) {
+  const s = String(u || '').trim();
+  const m = s.match(/raid-helper\.(?:xyz|dev)\/(?:raidplan|event|events|comp)\/(\d{15,22})/) || s.match(/^(\d{15,22})$/) || s.match(/discord(?:app)?\.com\/channels\/\d+\/\d+\/(\d{15,22})/);
+  return m ? m[1] : null;
+}
+function rhClassOf(x) {
+  if (x.className === 'Tank') return RH_TANK_SPEC[x.specName] || RH_CLASS_COLOR[String(x.color || '').toUpperCase()] || '';
+  return CLASSES.includes(x.className) ? x.className : '';
+}
+// "01-09-2026" → "2026-09-01"
+function rhDateIso(d) { const m = String(d || '').match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; }
+async function fetchRaidHelper(eventId) {
+  const ev = await fetch(`${RH_API}/events/${eventId}`, { cache: 'no-store' });
+  if (!ev.ok) throw new Error(ev.status === 404 ? 'Raid-Helper event not found — check the link' : `Raid-Helper fetch failed (HTTP ${ev.status})`);
+  const e = await ev.json();
+  let comp = null;
+  try { const c = await fetch(`${RH_API}/comps/${eventId}`, { cache: 'no-store' }); if (c.ok) { const j = await c.json(); if (Array.isArray(j?.slots)) comp = j; } } catch (_) {}
+  return {
+    event: { title: e.title || '', displayTitle: e.displayTitle || e.title || '', date: rhDateIso(e.date), time: e.time || '', startTime: e.startTime || null, endTime: e.endTime || null,
+      description: e.description || '', leaderName: e.leaderName || '', softresId: e.softresId || null, channelName: e.channelName || '', lastUpdated: e.lastUpdated || null },
+    signUps: (e.signUps || []).map(x => ({ name: x.name || '', userId: String(x.userId || ''), className: x.className || '', specName: x.specName || '', roleName: x.roleName || '',
+      status: x.status || '', entryTime: x.entryTime || null, position: x.position ?? null })),
+    comp: comp ? { slots: comp.slots.map(x => ({ name: x.name || '', userId: String(x.userId || ''), groupNumber: x.groupNumber, slotNumber: x.slotNumber, className: x.className || '',
+      specName: x.specName || '', color: x.color || '', isConfirmed: x.isConfirmed || 'unconfirmed' })), groups: (comp.groups || []).map(g => ({ name: g.name, position: g.position })) } : null,
+  };
+}
+// Fetch and store. Seeded fields (filled from Raid-Helper and never edited by hand) follow changes.
+async function syncRaidHelper(raid) {
+  const rh = raid.raidHelper; if (!rh?.eventId || rh.demo) return { changed: false };
+  try {
+    const data = await fetchRaidHelper(rh.eventId);
+    const before = JSON.stringify([rh.event, rh.signUps, rh.comp, raid.name, raid.date]);
+    Object.assign(rh, data, { syncedAt: new Date().toISOString(), syncError: null });
+    applyRaidHelperSeeds(raid);
+    return { changed: before !== JSON.stringify([rh.event, rh.signUps, rh.comp, raid.name, raid.date]) };
+  } catch (e) {
+    rh.syncError = e.message; rh.syncErrorAt = new Date().toISOString();
+    throw e;
+  }
+}
+function applyRaidHelperSeeds(raid) {
+  const ev = raid.raidHelper?.event, sd = raid.seeded || {}; if (!ev) return;
+  if (sd.name && ev.displayTitle) raid.name = ev.displayTitle;
+  if (sd.date && ev.date && ev.date !== raid.date && !raid.claLabel && !raidsData.raids.some(r => r !== raid && r.date === ev.date)) { raid.date = ev.date; normalizeRaid(raid); }
+  // Softres attached on Raid-Helper after the raid was linked: add the sheet if the raid has none
+  if (ev.softresId && !raid.softres.length) raid.softres.push({ id: _uid('s_'), code: ev.softresId, url: `https://softres.it/raid/${ev.softresId}`, addedAt: new Date().toISOString(), reserves: [], edits: {}, instances: [], fromRaidHelper: true });
+}
+// Who signed up, matched to raiders. status: signed | absence | bench | late | tentative;
+// comp: confirmed | unconfirmed | cancelled | null (not in the comp)
+function raidHelperRoster(raid) {
+  const rh = raid.raidHelper; if (!rh) return null;
+  const slotBy = new Map((rh.comp?.slots || []).map(s => [s.userId || normalizeName(s.name), s]));
+  const rows = rh.signUps.map(u => {
+    const special = RH_SPECIAL.includes(u.className) ? u.className.toLowerCase() : null;
+    const slot = slotBy.get(u.userId) || slotBy.get(normalizeName(u.name));
+    const key = resolveRosterKey(u.name, u.userId);
+    return { ...u, key, raider: rosterPlayer(key), status: special === 'absence' ? 'absence' : special || 'signed', comp: slot ? slot.isConfirmed : null,
+      group: slot?.groupNumber ?? null, cls: rhClassOf(slot || u), role: RH_ROLE[u.roleName] || '' };
+  });
+  // In the comp without a sign-up (added by an officer directly)
+  for (const s of rh.comp?.slots || []) if (!rows.some(r => (s.userId && r.userId === s.userId) || normalizeName(r.name) === normalizeName(s.name))) {
+    const key = resolveRosterKey(s.name, s.userId);
+    rows.push({ name: s.name, userId: s.userId, key, raider: rosterPlayer(key), status: 'signed', comp: s.isConfirmed, group: s.groupNumber, cls: rhClassOf(s), role: '', className: s.className, specName: s.specName });
+  }
+  return rows;
+}
+function raidHelperCounts(raid) {
+  const rows = raidHelperRoster(raid); if (!rows) return null;
+  const c = { signed: 0, confirmed: 0, unconfirmed: 0, cancelled: 0, bench: 0, absent: 0, late: 0, tentative: 0, hasComp: !!raid.raidHelper.comp?.slots?.length };
+  for (const r of rows) {
+    if (r.status === 'absence') c.absent++;
+    else { c.signed++; if (r.status === 'bench') c.bench++; if (r.status === 'late') c.late++; if (r.status === 'tentative') c.tentative++; }
+    if (r.comp) c[r.comp] = (c[r.comp] || 0) + 1;
+  }
+  return c;
+}
+
 // ── Gargul post-raid export (what actually got handed out in game) ──
 // base64(zlib(JSON)): { ID, playerMap, data:[{ itemID, awardedBy, awardedTo, isBonusLoot, received,
 // timestamp, rolls:[{ amount, player, timestamp, min, max }] }], checksum }. The checksum is Adler-32
@@ -5113,6 +5225,7 @@ function renderRaidsPanel() {
       <div class="raid-card-stats">
         ${r.softres.length ? `<span>${nRes} Reserve${nRes === 1 ? '' : 's'}</span>` : '<span><em>no SR sheet</em></span>'}
         ${over ? `<span style="color:${C5};">⚠ ${over} over-reserved</span>` : ''}
+        ${raidHelperCountsHtml(r)}
         ${gargulBadgeHtml(r)}
       </div></div>`;
   };
@@ -5121,12 +5234,14 @@ function renderRaidsPanel() {
     ${writeToken ? `<div class="raid-new">
       <div class="gl-col-title">Start a raid</div>
       <div class="raid-new-grid">
-        <input id="nrName" class="gl-input" placeholder="Name, e.g. MC + Onyxia">
-        <input id="nrDate" class="gl-input" type="date" value="${today}">
-        <input id="nrSoftres" class="gl-input" placeholder="softres.it link (optional)">
+        <input id="nrRaidHelper" class="gl-input nr-rh" placeholder="Raid-Helper link (optional) — fills the rest" onchange="previewRaidHelperLink()" onpaste="setTimeout(previewRaidHelperLink, 0)">
+        <input id="nrName" class="gl-input" placeholder="Name, e.g. MC + Onyxia" oninput="this.dataset.touched=1">
+        <input id="nrDate" class="gl-input" type="date" value="${today}" oninput="this.dataset.touched=1">
+        <input id="nrSoftres" class="gl-input" placeholder="softres.it link (optional)" oninput="this.dataset.touched=1">
         <label class="chk"><input type="checkbox" id="nrOptional"> Optional</label>
         <button class="small-gold-btn" onclick="createRaid()">START RAID</button>
       </div>
+      <div id="nrRhStatus" class="nr-rh-status"></div>
     </div>` : ''}
     <div class="section-title">Active raids</div>
     ${act.length ? act.map(card).join('') : '<div class="gl-empty">No active raid.</div>'}
@@ -5153,9 +5268,18 @@ async function createRaid() {
   let code = null;
   if (link) { code = softresCodeFromUrl(link); if (!code) { alert('That doesn\'t look like a softres.it raid link.'); return; } }
   const raid = normalizeRaid({ name, date, optional, status: 'active', createdAt: new Date().toISOString(), softres: [] });
+  const rhId = raidHelperIdFromUrl(document.getElementById('nrRaidHelper')?.value);
+  if (rhId) {
+    const pv = _nrRh.id === rhId ? _nrRh.data : null;
+    raid.raidHelper = { eventId: rhId, url: `https://raid-helper.xyz/raidplan/${rhId}`, ...(pv || {}), syncedAt: pv ? new Date().toISOString() : null, syncError: null };
+    // Fields that still hold what Raid-Helper filled in follow later changes to the event
+    raid.seeded = { name: !!pv && name === pv.event.displayTitle, date: !!pv && date === pv.event.date };
+  }
   if (code) raid.softres.push({ id: _uid('s_'), code, url: `https://softres.it/raid/${code}`, addedAt: new Date().toISOString(), reserves: [], edits: {}, instances: [] });
   raidsData.raids.push(raid);
   await saveRaids().catch(() => {});
+  if (rhId && !raid.raidHelper.syncedAt) { try { await syncRaidHelper(raid); await saveRaids().catch(() => {}); } catch (e) { flash(e.message, 'error'); } }
+  _nrRh = { id: null, data: null };
   if (code) { flash('Fetching softres…', 'loading'); await syncSoftres([raid]); flash(raid.softres[0].syncError ? 'Softres sync failed — see the Reserves tab' : 'Raid started', raid.softres[0].syncError ? 'error' : 'success'); }
   refreshAll();
   openRaid(raid.id);
@@ -5188,11 +5312,13 @@ function renderRaidDetail(panel, raid) {
         </span>
       </div>
       ${_raidView.editing ? `<div class="raid-new-grid" style="margin-top:10px;grid-template-columns:2fr 1fr auto auto auto;">
+        <input id="erRaidHelper" class="gl-input" style="grid-column:1/-1;" placeholder="Raid-Helper link (optional)" value="${escHtml(raid.raidHelper?.url || '')}">
         <input id="erName" class="gl-input" value="${escHtml(raid.name)}">
         <input id="erDate" class="gl-input" type="date" value="${raid.date}">
         <label class="chk"><input type="checkbox" id="erOptional" ${raid.optional ? 'checked' : ''}> Optional</label>
         <button class="small-gold-btn" onclick="saveRaidMeta('${raid.id}')">SAVE</button>
         <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Cancel</button></div>` : ''}
+      ${raidHelperLineHtml(raid)}
       ${overs.length && writeToken ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
         ${raid.status === 'active' ? '' : '<span style="opacity:0.8;"> — raid ended; the excess was forgiven (balances never go below 0).</span>'}</div>` : ''}
@@ -5217,10 +5343,24 @@ async function saveRaidMeta(id) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('Pick a date.'); return; }
   if (date !== raid.date && raidsData.raids.some(r => r.date === date)) { alert('Another raid already uses that date.'); return; }
   if (date !== raid.date && raid.claLabel) { alert('This raid has a CLA attached; remove it before changing the date.'); return; }
+  // Editing a seeded field by hand stops it following Raid-Helper
+  raid.seeded ||= {};
+  if (name !== raid.name) raid.seeded.name = false;
+  if (date !== raid.date) raid.seeded.date = false;
   Object.assign(raid, { name, date, optional });
+  const rhRaw = document.getElementById('erRaidHelper')?.value.trim() || '';
+  const rhId = raidHelperIdFromUrl(rhRaw);
+  if (rhRaw && !rhId) { alert('That doesn\'t look like a Raid-Helper event link.'); return; }
+  let rhErr = null;
+  if (!rhId) delete raid.raidHelper;
+  else if (rhId !== raid.raidHelper?.eventId) {
+    raid.raidHelper = { eventId: rhId, url: `https://raid-helper.xyz/raidplan/${rhId}`, signUps: [], comp: null, event: null };
+    try { await syncRaidHelper(raid); } catch (e) { rhErr = e.message; }
+  }
   normalizeRaid(raid);
   _raidView.editing = false;
   await saveRaids().catch(() => {});
+  if (rhErr) flash(rhErr, 'error');
   refreshAll();
 }
 
@@ -5230,6 +5370,7 @@ async function endRaid(id) {
   let note = hasCla ? 'Attendance comes from the CLA.' : hasManual ? 'Attendance comes from your manual marks (everyone unmarked counts as absent).'
     : `No CLA or manual attendance yet — everyone who reserved on softres will count as present (${Object.keys(raidReserves(raid)).filter(k => rosterPlayer(k)).length} raiders). You can still add the CLA or edit attendance afterwards.`;
   if (!confirm(`End "${raid.name}"?\n\n${note}\n\nReserves beyond anyone's balance are forgiven once the raid ends.`)) return;
+  if (raid.raidHelper?.eventId && !raid.raidHelper.demo) { try { await syncRaidHelper(raid); raid.raidHelper.finalAt = new Date().toISOString(); } catch (_) { /* keep the last good copy */ } }
   raid.status = 'past'; raid.endedAt = new Date().toISOString();
   await saveRaids().catch(() => {});
   refreshAll();
@@ -5249,6 +5390,69 @@ async function deleteRaid(id) {
   if (raid.claLabel) { const i = claSheets.findIndex(s => s.label === raid.claLabel); if (i >= 0) removeCla(i); }
   await saveRaids().catch(() => {});
   closeRaid(); refreshAll();
+}
+
+// ── Raid-Helper ─────────────────────────────────────────────────
+let _nrRh = { id: null, data: null };
+// Start-a-raid form: fetch the event as soon as a link is pasted and fill the empty fields
+async function previewRaidHelperLink() {
+  const st = document.getElementById('nrRhStatus'), raw = document.getElementById('nrRaidHelper')?.value || '';
+  const id = raidHelperIdFromUrl(raw);
+  if (!raw.trim()) { _nrRh = { id: null, data: null }; if (st) st.innerHTML = ''; return; }
+  if (!id) { if (st) st.innerHTML = '<span class="tag-warn">Not a Raid-Helper event link</span>'; return; }
+  if (st) st.innerHTML = '<span class="iv-dim">Fetching Raid-Helper event…</span>';
+  try {
+    const data = await fetchRaidHelper(id);
+    _nrRh = { id, data };
+    const ev = data.event, set = (elId, v) => { const el = document.getElementById(elId); if (el && v && !el.dataset.touched) el.value = v; };
+    set('nrName', ev.displayTitle);
+    set('nrDate', ev.date);
+    if (ev.softresId) set('nrSoftres', `https://softres.it/raid/${ev.softresId}`);
+    const c = raidHelperCounts({ raidHelper: { ...data } });
+    if (st) st.innerHTML = `<span class="tag-ok">Raid-Helper</span> <b>${escHtml(ev.displayTitle)}</b> · ${ev.date ? fmtDate(ev.date) : ''} ${escHtml(ev.time)} · ${c.signed} signed${c.absent ? ` · ${c.absent} absent` : ''}${ev.softresId ? ' · softres attached' : ''}`;
+  } catch (e) { _nrRh = { id: null, data: null }; if (st) st.innerHTML = `<span class="tag-warn">${escHtml(e.message)}</span>`; }
+}
+function raidHelperCountsHtml(raid) {
+  const c = raidHelperCounts(raid); if (!c) return '';
+  const parts = [`${c.signed} signed`];
+  if (c.hasComp) parts.push(`${c.confirmed || 0} ✓`);
+  if (c.cancelled) parts.push(`${c.cancelled} cancelled`);
+  if (c.bench) parts.push(`${c.bench} bench`);
+  if (c.absent) parts.push(`${c.absent} absent`);
+  return `<span class="rh-counts" title="Raid-Helper sign-ups${c.hasComp ? ' · ✓ = confirmed in the comp' : ''}">${parts.join(' · ')}</span>`;
+}
+function raidHelperLineHtml(raid) {
+  const rh = raid.raidHelper; if (!rh) return '';
+  return `<div class="rh-line">
+    <a href="${escHtml(rh.url)}" target="_blank" rel="noopener" class="rh-link">Raid-Helper${rh.event?.displayTitle ? ` · ${escHtml(rh.event.displayTitle)}` : ''} ↗</a>
+    ${raidHelperCountsHtml(raid)}
+    <span class="iv-dim" title="${escHtml(rh.syncError || '')}">${rh.demo ? 'demo copy' : rh.syncError ? `<span style="color:${C5};">⚠ sync failed ${fmtAgo(rh.syncErrorAt)}</span>${rh.syncedAt ? ` · last copy ${fmtAgo(rh.syncedAt)}` : ''}` : rh.syncedAt ? `synced ${fmtAgo(rh.syncedAt)}` : 'not synced yet'}${rh.finalAt ? ' · final copy kept' : ''}</span>
+    ${writeToken && !rh.demo ? `<button class="ghost-btn write-gated-hide" onclick="refreshRaidHelper('${raid.id}')">↻ Refresh</button>` : ''}
+    ${writeToken ? `<a class="subtle-link" onclick="setRaidSub('attendance')">sign-ups →</a>` : ''}
+  </div>`;
+}
+async function refreshRaidHelper(raidId) {
+  const raid = getRaid(raidId);
+  flash('Fetching Raid-Helper…', 'loading');
+  try { await syncRaidHelper(raid); flash('Raid-Helper synced'); } catch (e) { flash(e.message, 'error'); }
+  await saveRaids().catch(() => {});
+  refreshAll();
+}
+// Attendance tab: who signed up and how they matched (Phase 3 turns this into expected attendance)
+function raidHelperSignupsHtml(raid) {
+  const rows = raidHelperRoster(raid); if (!rows) return '';
+  const order = { signed: 0, late: 1, tentative: 2, bench: 3, absence: 4 };
+  const compTag = { confirmed: '<span class="tag-ok" title="Confirmed in the comp">✓ comp</span>', unconfirmed: '<span class="tag-opt" title="In the comp, not confirmed yet">? comp</span>', cancelled: '<span class="tag-warn" title="Was in the comp, then cancelled">cancelled</span>' };
+  const statusTag = { late: '<span class="tag-opt">late</span>', tentative: '<span class="tag-opt">tentative</span>', bench: '<span class="tag-opt">bench</span>', absence: '<span class="tag-warn">absence</span>' };
+  rows.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (a.group ?? 99) - (b.group ?? 99) || a.name.localeCompare(b.name));
+  const unmatched = rows.filter(r => !r.raider).length;
+  return `<details class="rh-signups" ${unmatched && writeToken ? 'open' : ''}><summary><span class="rh-arrow">▸</span><span class="rh-sum-title">Raid-Helper sign-ups</span> <span class="iv-dim">${rows.length}${unmatched ? ` · <b style="color:${C5};font-weight:normal;">${unmatched} not matched</b>` : ' · all matched'}</span></summary>
+    <table class="mini-table rh-table"><tbody>${rows.map(r => `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${r.raider ? playerNameHtml(r.raider.name) : notOnRosterTag(r.name).trim() || '<span class="iv-dim">—</span>'}</td>
+      <td class="iv-dim">${escHtml([r.cls, r.specName && r.className !== 'Tank' ? r.specName : r.specName ? r.specName.replace(/\d+$/, '') : ''].filter(Boolean).join(' · '))}</td>
+      <td>${statusTag[r.status] || ''} ${r.comp ? compTag[r.comp] || '' : ''}${r.group ? ` <span class="iv-dim">G${r.group}</span>` : ''}</td></tr>`).join('')}</tbody></table>
+  </details>`;
 }
 
 // ── Loot ────────────────────────────────────────────────────────
@@ -5712,7 +5916,7 @@ function renderRaidAttendance(el, raid) {
   const players = rosterData.players.filter(p => !rosterData.excluded?.includes(p.name))
     .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name));
   const present = players.filter(p => attendanceOf(raid, normalizeName(p.name)).present).length;
-  el.innerHTML = `<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px;flex-wrap:wrap;">
+  el.innerHTML = `${raidHelperSignupsHtml(raid)}<div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px;flex-wrap:wrap;">
       <span style="font-family:'Cinzel',serif;color:var(--gold-light);">${present} present</span>
     </div>
     <div class="att-grid">${players.map(p => {
@@ -6404,7 +6608,7 @@ function itemDetailHtml(key) {
 // previewed (SR balances, raids, loot, bad luck items) before it's saved.
 // ═════════════════════════════════════════════════════════════════════════════
 let _rd = { focus: '', creating: '' };
-const RD_SOURCE_LABEL = { softres: 'Softres', cla: 'CLA', loot: 'Loot log', gargul: 'Gargul export' };
+const RD_SOURCE_LABEL = { softres: 'Softres', cla: 'CLA', loot: 'Loot log', gargul: 'Gargul export', raidhelper: 'Raid-Helper' };
 
 function openRaidersInbox(name) {
   _rd.focus = normalizeName(baseName(name || ''));
@@ -6445,7 +6649,7 @@ function raidersInboxHtml() {
   const ignored = rosterData.excluded || [];
   if (!inbox.length && !ignored.length) return '';
   const roleSel = (id, cur) => `<select id="${id}" class="roster-edit-sel" onchange="rdRoleChanged('${id}')">${ROLE_ORDER.map(r => `<option ${r === cur ? 'selected' : ''}>${r}</option>`).join('')}</select>`;
-  const clsSel = (id, role) => `<select id="${id}" class="roster-edit-sel">${(ROLE_CLASSES[role] || CLASSES).map(c => `<option>${c}</option>`).join('')}</select>`;
+  const clsSel = (id, role, cur) => `<select id="${id}" class="roster-edit-sel">${(ROLE_CLASSES[role] || CLASSES).map(c => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
   const seenHtml = e => Object.entries(e.seen).map(([src, raids]) => `<span class="rd-seen">${RD_SOURCE_LABEL[src] || src} · ${raids.size} raid${raids.size === 1 ? '' : 's'}</span>`).join('');
   const rows = inbox.map(e => `<tr id="rdi_${e.key}" class="${_rd.focus === e.key ? 'rd-focus' : ''}">
       <td class="rd-name">${escHtml(e.name)}</td>
@@ -6458,7 +6662,7 @@ function raidersInboxHtml() {
       </div></td></tr>
       ${_rd.creating === e.key ? `<tr class="rd-create"><td colspan="3"><div class="rd-create-row">
         <input id="rdcName" class="gl-input" value="${escHtml(e.name)}" placeholder="Raider name (First Last)" style="width:220px;">
-        ${roleSel('rdcRole', 'Ranged DPS')}${clsSel('rdcClass', 'Ranged DPS')}
+        ${roleSel('rdcRole', e.role || 'Ranged DPS')}${clsSel('rdcClass', e.role || 'Ranged DPS', e.cls)}
         <label class="chk"><input type="checkbox" id="rdcAlt"> Alt</label>
         <button class="small-gold-btn" onclick="rdCreate('${e.key}')">CREATE</button>
         <span class="iv-dim">If the name differs, “${escHtml(e.name)}” is kept as an AKA.</span></div></td></tr>` : ''}`).join('');
@@ -6521,7 +6725,7 @@ async function rdAssign(nameKey, playerKey) {
   playerKey ||= document.getElementById('rdAcIn_' + nameKey)?.dataset.value;
   if (!playerKey || !rosterPlayer(playerKey)) { flash('Pick a raider from the list first.', 'error'); return; }
   const who = rosterPlayer(playerKey).name;
-  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), e.name), `“${e.name}” is now an AKA of ${who}`);
+  await _rdCommit(() => { const p = rosterPlayer(playerKey); _addAlias(p, e.name); for (const id of e.discordIds || []) _addAlias(p, id); }, `“${e.name}” is now an AKA of ${who}${e.discordIds?.size ? ' (with their Discord ID)' : ''}`);
 }
 async function rdCreate(nameKey) {
   const e = _rdEntry(nameKey); if (!e) return;
@@ -6532,6 +6736,7 @@ async function rdCreate(nameKey) {
   const ok = await _rdCommit(() => {
     const p = { name, role, class: cls, isAlt, addedAt: todayMST(), aliases: [] };
     if (normalizeName(baseName(e.name)) !== normalizeName(name)) _addAlias(p, e.name);
+    for (const id of e.discordIds || []) _addAlias(p, id);
     rosterData.players.push(p);
   }, `Added raider ${name}`);
   if (ok) _rd.creating = '';
@@ -6540,6 +6745,7 @@ async function rdIgnore(nameKey) {
   const e = _rdEntry(nameKey); if (!e) return;
   rosterData.excluded ||= [];
   if (!rosterData.excluded.includes(e.name)) rosterData.excluded.push(e.name);
+  for (const id of e.discordIds || []) if (!rosterData.excluded.includes(id)) rosterData.excluded.push(id);
   await saveRosterToGitHub(); refreshAll();
 }
 async function rdUnignore(i) {
@@ -6991,6 +7197,41 @@ function addDemoBunzie(fx, players, raids, parsed) {
   return open => { if (open) open.softres[0].edits[key] = { name: first, items: [chase, chase, shared] }; };
 }
 
+// A stored Raid-Helper copy for tonight's demo raid (never synced — demo: true): the sign-up
+// mix Phase 2/3 need — confirmed, unconfirmed, cancelled, bench, late, an absence, Discord
+// nicknames ("Bunz", "Main/Alt") and one sign-up that isn't a raider yet.
+function demoRaidHelper(fx, players, raid) {
+  const id = n => String(100000000000000000n + BigInt([...n].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 899999999999999, 7)));
+  const rhRole = { Tanks: 'Tanks', 'Physical DPS': 'Melee', 'Ranged DPS': 'Ranged', Healers: 'Healers' };
+  const spec = p => p.role === 'Tanks' ? { className: 'Tank', specName: p.class === 'Paladin' ? 'Protection1' : p.class === 'Druid' ? 'Guardian' : 'Protection' }
+    : { className: p.class, specName: ({ Warrior: 'Fury', Paladin: p.role === 'Healers' ? 'Holy' : 'Retribution', Hunter: 'Marksmanship', Rogue: 'Combat', Priest: p.role === 'Healers' ? 'Holy' : 'Shadow',
+        Shaman: p.role === 'Healers' ? 'Restoration' : p.role === 'Ranged DPS' ? 'Elemental' : 'Enhancement', Mage: 'Fire', Warlock: 'Destruction', Druid: p.role === 'Healers' ? 'Restoration' : p.role === 'Ranged DPS' ? 'Balance' : 'Feral' })[p.class] || '' };
+  const byName = n => players.find(p => p.name === n);
+  const reservers = fx.open.reserves.map(r => byName(r.name)).filter(Boolean);
+  const nick = p => p.name.startsWith('Bunzypoo') ? 'Bunz' : p.name.startsWith('Bunzie') ? 'Bunzie/Bunziealt' : p.name.split(' ')[0];
+  const t0 = Math.floor(Date.now() / 1000) - 3 * 86400;
+  const signUps = [], slots = [];
+  const sign = (p, i, cls = null) => {
+    const s = spec(p);
+    signUps.push({ name: nick(p), userId: id(p.name), className: cls || s.className, specName: cls ? '' : s.specName, roleName: cls ? '' : rhRole[p.role], status: 'primary', entryTime: t0 + i * 3700, position: i + 1 });
+  };
+  const slot = (p, i, isConfirmed) => { const s = spec(p); slots.push({ name: nick(p), userId: id(p.name), groupNumber: Math.floor(slots.length / 5) + 1, slotNumber: slots.length % 5 + 1, className: s.className, specName: s.specName, color: '', isConfirmed }); };
+  const bunzie = byName(DEMO_BUNZIE.name);
+  const everyone = [...reservers, ...(bunzie && !reservers.includes(bunzie) ? [bunzie] : [])];
+  everyone.forEach((p, i) => {
+    if (i === 4) { sign(p, i, 'Bench'); return; }                       // benched
+    sign(p, i, i === 5 ? 'Late' : null);
+    slot(p, i, i === 2 ? 'unconfirmed' : i === 3 ? 'cancelled' : 'confirmed');
+  });
+  const absent = players.find(p => !everyone.includes(p) && !p.isAlt);
+  if (absent) sign(absent, everyone.length, 'Absence');
+  signUps.push({ name: 'Tinkerbelle', userId: id('Tinkerbelle'), className: 'Priest', specName: 'Holy', roleName: 'Healers', status: 'primary', entryTime: t0 + 99000, position: signUps.length + 1 });
+  raid.raidHelper = { eventId: '1550000000000000001', url: 'https://raid-helper.xyz/raidplan/1550000000000000001', demo: true,
+    event: { title: 'Molten Core', displayTitle: 'Molten Core', date: raid.date, time: '19:30', startTime: null, endTime: null, description: 'Weekly MC — SR on softres.', leaderName: 'Bunz',
+      softresId: raid.softres[0]?.code || null, channelName: 'raid-signups', lastUpdated: t0 },
+    signUps, comp: { slots, groups: Array.from({ length: 8 }, (_, i) => ({ name: `Group ${i + 1}`, position: i + 1 })) }, syncedAt: new Date().toISOString(), syncError: null };
+}
+
 // Write the fixture into this dashboard's storage (roster, raids, CLAs, glossary). Never calls softres.
 async function applyDemoFixture(fx) {
   _demoGlossaryMC();
@@ -7054,6 +7295,7 @@ async function applyDemoFixture(fx) {
   // The open sheet becomes today's active raid
   if (fx.open) raids.push(normalizeRaid({ name: fx.open.name, date: todayMST(), optional: false, status: 'active', createdAt: new Date().toISOString(), softres: [sheetFor(fx.open, new Date().toISOString())], loot: [] }));
   if (fx.open) bunzieTonight?.(raids[raids.length - 1]);
+  if (fx.open) demoRaidHelper(fx, players, raids[raids.length - 1]);
   await _putWf('roster.json', { players, excluded: [] });
   await _putWf('glossary.json', glossary);
   await _putWf('sr-rules.json', DEFAULT_SR_RULES);
@@ -7103,6 +7345,12 @@ async function fetchData(opts = {}) {
     // never synced (fetched once, then left alone). Read-only visitors never hit softres.
     const toSync = [...activeRaids().filter(r => r.softres.some(s => !s.demo)),
       ...pastRaids().filter(r => r.softres.some(s => !s.demo && !s.syncedAt)).slice(-8)];
+    const rhSync = activeRaids().filter(r => r.raidHelper?.eventId && !r.raidHelper.demo);
+    if (!opts.skipSoftres && writeToken && rhSync.length) {
+      let changed = false;
+      for (const r of rhSync) { try { changed = (await syncRaidHelper(r)).changed || changed; } catch (e) { changed = true; fetchErrors.push({ source: `Raid-Helper (${r.name})`, message: e.message, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }); } }
+      if (changed) { await saveRaids().catch(() => {}); refreshAll(); }
+    }
     if (!opts.skipSoftres && writeToken && toSync.length) {
       setStatus('Syncing softres…', 'loading');
       await syncSoftres(toSync);
