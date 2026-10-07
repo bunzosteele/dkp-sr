@@ -1699,6 +1699,26 @@
 .gx-kind.extra { color: var(--gold-light); background: rgba(var(--accent-rgb),0.10); }
 .gx-kind.roll { color: #b9a4f0; background: rgba(150,120,230,0.13); }
 @media (max-width: 640px) { .gx-table td { display: block; border: 0; padding: 2px 4px; } .gx-table tr { display: block; border-bottom: 1px solid var(--border); padding: 6px 0; } .gx-act { text-align: left; } .gx-act button:first-child { margin-left: 0; } }
+.nav-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: #c94c4c; color: #fff; font-size: 13px; line-height: 18px; text-align: center; letter-spacing: 0; font-family: 'Crimson Pro', serif; vertical-align: middle; }
+.rd-page .rules-intro { max-width: 900px; }
+.rd-table td { vertical-align: middle; }
+.rd-name { white-space: nowrap; font-size: 17px; }
+.rd-seen-list, .rd-aliases { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rd-seen { font-size: 14px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; color: var(--text-dim); white-space: nowrap; }
+.rd-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
+.rd-assign { display: inline-flex; gap: 6px; align-items: center; }
+.rd-ac { position: relative; display: inline-block; width: 170px; }
+.rd-create td { background: rgba(var(--accent-rgb), 0.05); }
+.rd-create-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rd-focus td { background: rgba(240,176,96,0.10); transition: background 1s; }
+.rd-alias { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px 1px 6px; font-size: 16px; }
+.rd-alias-type { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold-light); opacity: 0.8; }
+.rd-add-alias { display: inline-flex; gap: 4px; align-items: center; }
+.rd-add-alias .gl-input { width: 130px; padding: 3px 6px; }
+.rd-add-alias select { padding: 3px 4px; }
+.rd-link { cursor: pointer; text-decoration: none; }
+.rd-ignored { margin-top: 18px; }
+@media (max-width: 640px) { .rd-table td { display: block; border: 0; padding: 3px 4px; } .rd-table tr { display: block; border-bottom: 1px solid var(--border); padding: 6px 0; } .rd-table thead { display: none; } .rd-actions { justify-content: flex-start; } }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -1731,6 +1751,7 @@
         </button>
         <div class="nav-dropdown-menu" id="navDdGuildMgmtMenu">
           <button class="group-btn" data-mode="roster" onclick="navDropdownSelect('navDdGuildMgmt','roster')">Roster</button>
+          <button class="group-btn" data-mode="raiders" onclick="navDropdownSelect('navDdGuildMgmt','raiders')">Raiders</button>
           <button class="group-btn" data-mode="glossary" onclick="navDropdownSelect('navDdGuildMgmt','glossary')">Item Glossary</button>
           <button class="group-btn" data-mode="rules" onclick="navDropdownSelect('navDdGuildMgmt','rules')">SR Rules</button>
         </div>
@@ -1749,6 +1770,7 @@
   <div id="raidsPanel" style="display:none;padding:8px 0;"></div>
   <div id="itemsPanel" style="display:none;padding:8px 0;"></div>
   <div id="rosterPanel" style="display:none;padding:8px 0;"></div>
+  <div id="raidersPanel" style="display:none;padding:8px 0;"></div>
   <div id="glossaryPanel" style="display:none;padding:8px 0;"></div>
   <div id="rulesPanel" style="display:none;padding:8px 0;"></div>
 
@@ -3940,13 +3962,18 @@ function rosterPlayer(key) { return rosterData.players.find(p => normalizeName(p
 // edits[charKey] = { name, items:[wowheadIds] } replaces that character's list
 // (an empty list removes them); characters only in edits are manual additions.
 // ── Name matching ─────────────────────────────────────────────
-// WoW Forever names are "First Last". Softres (and CLA) names may be the first name,
-// the last name, or both — accent-insensitive. We match the full name first, then a
-// first or last name that belongs to exactly one raider. Ambiguous or unknown names
-// stay unmatched (and are flagged) rather than being guessed.
+// WoW Forever names are "First Last". Softres, CLA and Gargul names may be the first name,
+// the last name, or both — accent-insensitive — and Gargul adds the realm ("Bunzie-Dreamscythe").
+// A name resolves, in order, by: Discord ID → exact raider name → any alias a raider has
+// (alternate spelling, alt character, softres name) → a first or last name that belongs to
+// exactly one raider. Ambiguous or unknown names stay unmatched (and land in the Raiders
+// inbox) rather than being guessed. Aliases are retroactive: adding one re-attributes history.
+const ALIAS_TYPES = { name: 'Name / alt', softres: 'Softres', discord: 'Discord ID' };
+// Character names never contain "-": anything after one is the realm
+function baseName(name) { return String(name ?? '').split('-')[0].trim(); }
 let _nameIndex = null;
 function _buildNameIndex() {
-  const full = new Map(), part = new Map();
+  const full = new Map(), part = new Map(), alias = new Map(), discord = new Map();
   for (const p of rosterData.players) {
     const k = normalizeName(p.name);
     full.set(k, k);
@@ -3955,25 +3982,114 @@ function _buildNameIndex() {
       if (!part.has(wk)) part.set(wk, new Set());
       part.get(wk).add(k);
     }
+    for (const a of p.aliases || []) {
+      if (a.type === 'discord') discord.set(String(a.value).trim(), k);
+      else { const ak = normalizeName(baseName(a.value)); if (ak && !alias.has(ak)) alias.set(ak, k); }
+    }
   }
-  return { full, part, memo: new Map() };
+  return { full, part, alias, discord, memo: new Map() };
 }
-function resolveRosterKey(name) {
+function resolveRosterKey(name, discordId) {
   _nameIndex ||= _buildNameIndex();
-  const nk = normalizeName(name);
+  if (discordId && _nameIndex.discord.has(String(discordId))) return _nameIndex.discord.get(String(discordId));
+  const base = baseName(name), nk = normalizeName(base);
   if (_nameIndex.memo.has(nk)) return _nameIndex.memo.get(nk);
-  let res = _nameIndex.full.get(nk) || null;
+  let res = _nameIndex.full.get(nk) || _nameIndex.alias.get(nk) || null;
   if (!res) {
     // Try the whole string as one part, then each word of it
     const cands = new Set();
-    for (const w of [name, ...String(name).split(/\s+/)]) {
-      const hit = _nameIndex.part.get(normalizeName(w));
+    for (const w of [base, ...base.split(/\s+/)]) {
+      const wk = normalizeName(w);
+      const hit = _nameIndex.part.get(wk);
       if (hit && hit.size === 1) cands.add([...hit][0]);
+      else if (_nameIndex.alias.has(wk)) cands.add(_nameIndex.alias.get(wk));
     }
     res = cands.size === 1 ? [...cands][0] : nk; // unmatched → its own key (flagged as not on roster)
   }
   _nameIndex.memo.set(nk, res);
   return res;
+}
+// Loot is stored with the recipient's name as typed / imported; attribute it through the resolver
+function lootKey(l) { return resolveRosterKey(l.recipient); }
+function isIgnoredName(name) {
+  const k = normalizeName(baseName(name));
+  return (rosterData.excluded || []).some(n => normalizeName(baseName(n)) === k);
+}
+
+// ── Unrecognised names: everything seen in raid data that doesn't resolve to a raider ──
+// Returns [{ key, name, seen: { softres|cla|loot|gargul: Set(raidId) }, suggest: [playerKey] }]
+function unrecognizedNames() {
+  const out = new Map();
+  const note = (name, src, raidId) => {
+    const nm = baseName(name); if (!nm || nm === '||de||') return;
+    const k = resolveRosterKey(nm);
+    if (rosterPlayer(k) || isIgnoredName(nm)) return;
+    const e = out.get(k) || { key: k, name: nm, seen: {} };
+    (e.seen[src] ||= new Set()).add(raidId);
+    out.set(k, e);
+  };
+  for (const r of raidsData.raids) {
+    for (const s of r.softres) for (const e of Object.values(effectiveReserves(s))) note(e.name, 'softres', r.id);
+    const live = r.claLabel ? claPlayersByLabel[r.claLabel] : null;
+    for (const k of (live && live.size ? [...live] : r.attendance.cla)) note(canonicalNames[k] || k, 'cla', r.id);
+    for (const l of r.loot) note(l.recipient, 'loot', r.id);
+    for (const a of r.gargul?.awards || []) { if (!a.de) note(a.to, 'gargul', r.id); for (const x of a.rolls || []) note(x.player, 'gargul', r.id); }
+  }
+  for (const e of out.values()) e.suggest = suggestRaidersFor(e.name);
+  return [...out.values()].sort((a, b) => _seenCount(b) - _seenCount(a) || a.name.localeCompare(b.name));
+}
+function _seenCount(e) { return new Set(Object.values(e.seen).flatMap(s => [...s])).size; }
+// Raiders an unknown name probably belongs to: one name contains the other's first/last name,
+// or they're a typo apart. Officers always confirm.
+function suggestRaidersFor(name) {
+  const u = normalizeName(baseName(name)); if (u.length < 3) return [];
+  const scored = [];
+  for (const p of rosterData.players) {
+    const k = normalizeName(p.name);
+    const words = String(p.name).split(/\s+/).map(normalizeName).filter(w => w.length >= 3);
+    let score = null;
+    for (const w of [k, ...words, ...(p.aliases || []).filter(a => a.type !== 'discord').map(a => normalizeName(baseName(a.value)))]) {
+      if (!w) continue;
+      if (u.includes(w) || w.includes(u)) score = Math.min(score ?? 9, 0);
+      else if (Math.abs(w.length - u.length) <= 2 && _lev(w, u) <= 2) score = Math.min(score ?? 9, _lev(w, u));
+    }
+    if (score !== null) scored.push([score, k]);
+  }
+  return scored.sort((a, b) => a[0] - b[0]).slice(0, 3).map(x => x[1]);
+}
+
+// What changing the roster (aliases, new raiders) would do to history, before saving it.
+// mutate() edits rosterData in place; everything is restored afterwards.
+function previewRosterChange(mutate) {
+  const snap = JSON.stringify(rosterData);
+  const take = () => {
+    invalidateDerived();
+    const led = computeSrLedger(), blp = computeBlp();
+    const o = {};
+    for (const p of rosterData.players) {
+      const k = normalizeName(p.name), st = led[k] || {};
+      o[k] = { name: p.name, srs: st.available || 0, raids: raidsData.raids.filter(r => attendanceOf(r, k).present).length,
+        reserves: raidsData.raids.reduce((n, r) => n + reservedCount(r, k), 0), loot: raidsData.raids.reduce((n, r) => n + r.loot.filter(l => lootKey(l) === k).length, 0),
+        blp: Object.values(blp.losses[k] || {}).filter(n => n > 0).length };
+    }
+    return o;
+  };
+  const before = take();
+  try { mutate(); } catch (e) { rosterData = JSON.parse(snap); invalidateDerived(); throw e; }
+  const after = take();
+  rosterData = JSON.parse(snap); invalidateDerived();
+  const lines = [];
+  for (const [k, a] of Object.entries(after)) {
+    const b = before[k] || { srs: 0, raids: 0, reserves: 0, loot: 0, blp: 0 };
+    const d = [];
+    if (a.raids !== b.raids) d.push(`raids attended ${b.raids} → ${a.raids}`);
+    if (a.reserves !== b.reserves) d.push(`reserves ${b.reserves} → ${a.reserves}`);
+    if (a.loot !== b.loot) d.push(`loot ${b.loot} → ${a.loot}`);
+    if (a.srs !== b.srs) d.push(`SR balance ${b.srs} → ${a.srs}`);
+    if (a.blp !== b.blp) d.push(`bad luck items ${b.blp} → ${a.blp}`);
+    if (d.length) lines.push(`${a.name}: ${d.join(', ')}`);
+  }
+  return lines;
 }
 
 function effectiveReserves(sheet) {
@@ -4133,7 +4249,7 @@ function computeBlp() {
   for (const r of sortedRaids()) {
     const res = raidReserves(r);
     const winners = {};
-    for (const l of r.loot) (winners[l.itemKey] ||= new Set()).add(normalizeName(l.recipient));
+    for (const l of r.loot) (winners[l.itemKey] ||= new Set()).add(lootKey(l));
     before[r.id] = {}; outcome[r.id] = {};
     for (const [pk, items] of Object.entries(res)) {
       before[r.id][pk] = {}; outcome[r.id][pk] = {};
@@ -4214,7 +4330,7 @@ function gargulImportPayload(raid) {
 // base64(zlib(JSON)): { ID, playerMap, data:[{ itemID, awardedBy, awardedTo, isBonusLoot, received,
 // timestamp, rolls:[{ amount, player, timestamp, min, max }] }], checksum }. The checksum is Adler-32
 // (%08x) over one tab-separated line per award — a mismatch means the text was edited or truncated.
-const stripRealm = n => String(n || '').split('-')[0];
+const stripRealm = baseName;
 function _adler32(str) {
   let a = 1, b = 0;
   for (const byte of new TextEncoder().encode(str)) { a = (a + byte) % 65521; b = (b + a) % 65521; }
@@ -4250,8 +4366,8 @@ function gargulDiff(raid) {
   const g = raid.gargul; if (!g) return null;
   const ign = new Set(g.ignored || []);
   const cmpKey = ik => { const id = itemWowheadId(ik); return id ? 'id:' + id : ik; };
-  const exp = g.awards.map((a, i) => ({ a, i, ik: 'id:' + a.itemId, pk: a.de ? null : resolveRosterKey(stripRealm(a.to)) })).filter(x => !x.a.de);
-  let log = raid.loot.map(l => ({ l, ik: cmpKey(l.itemKey), pk: normalizeName(l.recipient) }));
+  const exp = g.awards.map((a, i) => ({ a, i, ik: 'id:' + a.itemId, pk: a.de ? null : resolveRosterKey(a.to) })).filter(x => !x.a.de);
+  let log = raid.loot.map(l => ({ l, ik: cmpKey(l.itemKey), pk: lootKey(l) }));
   let rest = [];
   for (const x of exp) {
     const j = log.findIndex(y => y.ik === x.ik && y.pk === x.pk);
@@ -4268,7 +4384,7 @@ function gargulDiff(raid) {
   const extra = log.map(y => ({ id: `extra:${y.l.id}`, loot: y.l }));
   const res = raidReserves(raid), rolls = [];
   for (const x of exp) for (const r of x.a.rolls) {
-    const pk = resolveRosterKey(stripRealm(r.player));
+    const pk = resolveRosterKey(r.player);
     if (!res[pk]?.[x.ik]) continue; // only reservers have a bad luck range to check
     const want = rollFor(raid, pk, x.ik).max;
     if (r.max !== want || r.min !== 1) rolls.push({ id: `roll:${x.i}:${pk}:${r.min}-${r.max}`, award: x.a, pk, player: r.player, got: `${r.min}-${r.max}`, want: `1-${want}` });
@@ -4427,8 +4543,8 @@ function flash(msg, type = 'success') { setStatus(msg, type); }
 // Navigation
 // ═════════════════════════════════════════════════════════════════════════════
 const _navDropdowns = ['navDdGuildMgmt'];
-const _navDropdownModes = { navDdGuildMgmt: ['roster', 'glossary', 'rules'] };
-const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
+const _navDropdownModes = { navDdGuildMgmt: ['roster', 'raiders', 'glossary', 'rules'] };
+const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', raiders: 'raidersPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
 
 function navDropdownToggle(id) {
   const menu = document.getElementById(id + 'Menu'), btn = document.getElementById(id + 'Btn');
@@ -4468,10 +4584,12 @@ function setGrouping(mode) {
 }
 
 function renderCurrent() {
+  try { updateRaidersBadge(); } catch (_) {}
   if (groupingMode === 'role') render(lastRenderData);
   else if (groupingMode === 'raids') renderRaidsPanel();
   else if (groupingMode === 'items') renderItemsPanel();
   else if (groupingMode === 'roster') renderRosterPanel();
+  else if (groupingMode === 'raiders') renderRaidersPanel();
   else if (groupingMode === 'glossary') renderGlossaryPanel();
   else if (groupingMode === 'rules') renderRulesPanel();
 }
@@ -4716,7 +4834,7 @@ function render(data) {
 // ═════════════════════════════════════════════════════════════════════════════
 function lootReceived(key) {
   const out = [];
-  for (const r of sortedRaids()) for (const l of r.loot) if (normalizeName(l.recipient) === key) out.push({ ...l, raid: r });
+  for (const r of sortedRaids()) for (const l of r.loot) if (lootKey(l) === key) out.push({ ...l, raid: r });
   return out.reverse();
 }
 
@@ -5076,7 +5194,7 @@ function renderRaidDetail(panel, raid) {
       ${overs.length && writeToken ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
         ${raid.status === 'active' ? '' : '<span style="opacity:0.8;"> — raid ended; the excess was forgiven (balances never go below 0).</span>'}</div>` : ''}
-      ${unknown.length && writeToken ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until added (Roster, or rename on softres).</div>` : ''}
+      ${unknown.length && writeToken ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until matched. <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(unknown[0].name)}')">Assign them in Raiders →</a></div>` : ''}
       <div class="sub-tabs">${tabs.map(([k, l]) => `<button class="sub-tab ${sub === k ? 'on' : ''}" onclick="setRaidSub('${k}')">${l}${k === 'reserves' ? ` <span class="count">${Object.keys(raidReserves(raid)).length}</span>` : k === 'loot' ? ` <span class="count">${raid.loot.length}</span>` : ''}</button>`).join('')}</div>
     </div>
     <div id="raidSub"></div>`;
@@ -5254,7 +5372,7 @@ function renderLootItemView(el, raid, itemKey) {
   const it = getItem(itemKey) || { name: itemName(itemKey), eligibleClasses: [] };
   const res = raidReserves(raid);
   const reservers = Object.entries(res).filter(([, m]) => m[itemKey]).map(([k, m]) => ({ key: k, count: m[itemKey] }));
-  const alreadyThisRaid = new Set(raid.loot.filter(l => l.itemKey === itemKey).map(l => normalizeName(l.recipient)));
+  const alreadyThisRaid = new Set(raid.loot.filter(l => l.itemKey === itemKey).map(l => lootKey(l)));
   const classes = it.eligibleClasses || [];
   const gearSlots = gearSlotsForItem(itemKey);
   const canAssign = !!writeToken;
@@ -5278,7 +5396,7 @@ function renderLootItemView(el, raid, itemKey) {
     srHtml = `<div class="sr-box ${gearSlots ? 'with-cur' : ''}">
       <div class="gl-col-title">Soft reserved by ${reservers.length}</div>
       ${rows.map(r => `<div class="sr-row ${r.present ? '' : 'absent'} ${r.over ? 'over' : ''}">
-        <span class="sr-name">${playerNameHtml(r.name)}${r.rp || !writeToken ? '' : ' <span class="tag-warn">not on roster</span>'}</span>
+        <span class="sr-name">${playerNameHtml(r.name)}${r.rp ? '' : notOnRosterTag(r.name)}</span>
         ${r.count > 1 ? `<span class="sr-multi" title="Reserved ${r.count} times — rolls ${r.count} times">×${r.count}</span>` : '<span></span>'}
         ${gearSlots ? `<span class="sr-cur">${currentGearHtml(r.name, gearSlots)}</span>` : ''}
         <span class="sr-roll ${r.rm > 100 ? 'blp-boost' : ''}" title="${r.losses ? `Lost this item ${r.losses}× before — bad luck protection` : 'Standard roll'}">/roll ${r.rm}</span>
@@ -5325,7 +5443,7 @@ function renderRaidLootLog(el, raid) {
   // Two lists: loot won through a soft reserve, and loot handed out MS > OS.
   // The ⇄ button moves an award to the other list if it was recorded wrong.
   const row = (l, i) => `<tr>
-      <td>${itemLinkHtml(l.itemKey, l.name)}${!l.sr && res[normalizeName(l.recipient)]?.[l.itemKey] ? ' <span class="tag-warn" title="They reserved this item — was it an SR win?">reserved</span>' : ''}</td>
+      <td>${itemLinkHtml(l.itemKey, l.name)}${!l.sr && res[lootKey(l)]?.[l.itemKey] ? ' <span class="tag-warn" title="They reserved this item — was it an SR win?">reserved</span>' : ''}</td>
       <td>${playerNameHtml(l.recipient)}</td>
       <td style="text-align:right;white-space:nowrap;"><button class="ghost-btn write-gated-hide ll-move" onclick="toggleLootSr('${raid.id}', ${i})" title="${l.sr ? 'Move to MS > OS' : 'Move to SR'}">⇄ ${l.sr ? 'MS > OS' : 'SR'}</button>
         <button class="x-btn write-gated-hide" onclick="removeLoot('${raid.id}', ${i})" title="Remove">✕</button></td>
@@ -5386,7 +5504,7 @@ function gargulCheckHtml(raid) {
       <div style="display:flex;gap:8px;margin-top:6px;"><button class="small-gold-btn" onclick="importGargulExport('${raid.id}')">CHECK LOOT</button></div></details>`;
   if (!d) return `<div class="gx-box">${paste(raid.status === 'past', 'Check against the Gargul export')}</div>`;
   const g = raid.gargul;
-  const who = (pk, raw) => rosterPlayer(pk) ? playerNameHtml(rosterPlayer(pk).name) : `${escHtml(stripRealm(raw))} <span class="tag-warn">not on roster</span>`;
+  const who = (pk, raw) => rosterPlayer(pk) ? playerNameHtml(rosterPlayer(pk).name) : `${escHtml(stripRealm(raw))}${notOnRosterTag(raw)}`;
   const item = a => itemLinkHtml('id:' + a.itemId, a.name);
   const ign = id => `<button class="ghost-btn" onclick="gargulIgnore('${raid.id}','${id}')" title="It's fine — stop flagging this">Ignore</button>`;
   const rows = [
@@ -5486,7 +5604,7 @@ function renderRaidReserves(el, raid) {
         const counts = {}; r.items.forEach(id => counts[id] = (counts[id] || 0) + 1);
         const ev = rp ? srStats(rp.name).events.find(e => e.raidId === raid.id) : null;
         return `<tr class="${ev?.over ? 'row-over' : ''}">
-          <td>${playerNameHtml(r.name)}${rp || !writeToken ? '' : ' <span class="tag-warn">not on roster</span>'}${r.edited ? ' <span class="tag-opt" title="Edited by hand — softres changes for this character are ignored until reverted">edited</span>' : ''}</td>
+          <td>${playerNameHtml(r.name)}${rp ? '' : notOnRosterTag(r.name)}${r.edited ? ' <span class="tag-opt" title="Edited by hand — softres changes for this character are ignored until reverted">edited</span>' : ''}</td>
           <td><div class="loot-list">${Object.entries(counts).map(([id, c]) => `<span class="loot-item res-chip">${itemLinkHtml(itemKeyFor(+id))}${c > 1 ? ` <span class="sr-multi">×${c}</span>` : ''}<button class="x-btn write-gated-hide" onclick="editReserve('${raid.id}','${s.id}','${r.key}','remove',${id})" title="Remove one">✕</button></span>`).join('') || '<em class="no-loot">none</em>'}</div></td>
           <td>${rp && ev ? `${ev.over && writeToken ? `<span class="over-chip">⚠ ${ev.reserved}/${ev.reserved - ev.over}</span>` : `${ev.reserved} of ${ev.reserved + Math.max(0, ev.balance)}`}` : '—'}</td>
           <td style="white-space:nowrap;text-align:right;" class="write-gated-hide">
@@ -5769,9 +5887,9 @@ function renderRosterPanel() {
       </div>
       <div id="attendanceClaRecs" style="flex:1;min-width:200px;"></div>
     </div>`;
-  const recs = getRosterClaRecommendations();
-  if (recs.length) document.getElementById('attendanceClaRecs').innerHTML = `<div class="sheet-card"><div class="gl-col-title">Seen in CLA — not on roster</div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;">${recs.map(k => `<span class="res-chip loot-item">${escHtml(canonicalNames[k] || k)} <button class="x-btn" title="Hide" onclick="rosterExcludePlayer('${k}')">✕</button></span>`).join('')}</div></div>`;
+  const unknown = unrecognizedNames().length;
+  if (unknown) document.getElementById('attendanceClaRecs').innerHTML = `<div class="sheet-card"><div class="gl-col-title">Unrecognised names</div>
+    <div>${unknown} name${unknown === 1 ? '' : 's'} from softres, CLAs, loot or Gargul don't match a raider. <a class="subtle-link" onclick="setGrouping('raiders')">Assign or ignore them in Raiders →</a></div></div>`;
   const sc = document.getElementById('rosterScroll');
   if (sc) requestAnimationFrame(() => sc.scrollLeft = sc.scrollWidth);
 }
@@ -6278,6 +6396,187 @@ function itemDetailHtml(key) {
     ${histHtml}`;
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Management → Raiders: aliases + the unrecognised-names inbox
+// Every name seen in softres sheets, CLAs, the loot log and Gargul exports that doesn't
+// resolve to a raider lands in the inbox. Assigning it adds an alias to that raider, which
+// is retroactive: past reserves, attendance and loot are re-attributed, so each change is
+// previewed (SR balances, raids, loot, bad luck items) before it's saved.
+// ═════════════════════════════════════════════════════════════════════════════
+let _rd = { focus: '', creating: '', filter: '' };
+const RD_SOURCE_LABEL = { softres: 'Softres', cla: 'CLA', loot: 'Loot log', gargul: 'Gargul export' };
+
+function openRaidersInbox(name) {
+  _rd.focus = normalizeName(baseName(name || ''));
+  setGrouping('raiders');
+}
+function notOnRosterTag(name) {
+  if (!writeToken) return '';
+  return ` <a class="tag-warn rd-link" onclick="event.stopPropagation();openRaidersInbox('${jsAttr(name)}')" title="Sort it out in Management → Raiders">not on roster</a>`;
+}
+
+function updateRaidersBadge() {
+  const n = writeToken ? unrecognizedNames().length : 0;
+  const set = (el, cls) => {
+    if (!el) return;
+    let b = el.querySelector('.' + cls);
+    if (!n) { b?.remove(); return; }
+    if (!b) { b = document.createElement('span'); b.className = 'nav-count ' + cls; el.appendChild(b); }
+    b.textContent = n; b.title = `${n} unrecognised name${n === 1 ? '' : 's'}`;
+  };
+  set(document.getElementById('navDdGuildMgmtBtn'), 'rd-badge-btn');
+  set(document.querySelector('#navDdGuildMgmtMenu [data-mode="raiders"]'), 'rd-badge-item');
+}
+
+function renderRaidersPanel() {
+  const panel = document.getElementById('raidersPanel'); if (!panel) return;
+  const inbox = unrecognizedNames();
+  const roleSel = (id, cur, then = '') => `<select id="${id}" class="roster-edit-sel" onchange="rdRoleChanged('${id}');${then}">${ROLE_ORDER.map(r => `<option ${r === cur ? 'selected' : ''}>${r}</option>`).join('')}</select>`;
+  const clsSel = (id, role, cur) => `<select id="${id}" class="roster-edit-sel">${(ROLE_CLASSES[role] || CLASSES).map(c => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
+  const seenHtml = e => Object.entries(e.seen).map(([src, raids]) => `<span class="rd-seen">${RD_SOURCE_LABEL[src] || src} · ${raids.size} raid${raids.size === 1 ? '' : 's'}</span>`).join('');
+
+  const inboxRows = inbox.map(e => {
+    const id = 'rdi_' + e.key;
+    const creating = _rd.creating === e.key;
+    return `<tr id="${id}" class="${_rd.focus === e.key ? 'rd-focus' : ''}">
+      <td class="rd-name">${escHtml(e.name)}</td>
+      <td><div class="rd-seen-list">${seenHtml(e)}</div></td>
+      <td><div class="rd-actions">
+        ${e.suggest.map(k => `<button class="small-gold-btn" onclick="rdAssign('${e.key}','${k}')" title="Add “${escHtml(e.name)}” as an alias of ${escHtml(rosterPlayer(k)?.name || k)}">→ ${escHtml(rosterPlayer(k)?.name || k)}</button>`).join('')}
+        <span class="rd-assign"><span id="rdAc_${e.key}" class="rd-ac"></span><button class="ghost-btn" onclick="rdAssign('${e.key}')">Assign</button></span>
+        <button class="ghost-btn" onclick="_rd.creating=_rd.creating==='${e.key}'?'':'${e.key}';renderRaidersPanel()">New raider…</button>
+        <button class="ghost-btn" onclick="rdIgnore('${e.key}')" title="Not a raider (a pug, a typo…) — stop listing it">Ignore</button>
+      </div></td></tr>
+      ${creating ? `<tr class="rd-create"><td colspan="3"><div class="rd-create-row">
+        <input id="rdcName" class="gl-input" value="${escHtml(e.name)}" placeholder="Raider name (First Last)" style="width:220px;">
+        ${roleSel('rdcRole', 'Ranged DPS')}${clsSel('rdcClass', 'Ranged DPS', '')}
+        <label class="chk"><input type="checkbox" id="rdcAlt"> Alt</label>
+        <button class="small-gold-btn" onclick="rdCreate('${e.key}')">CREATE</button>
+        <span class="iv-dim">If the name differs, “${escHtml(e.name)}” is kept as an alias.</span></div></td></tr>` : ''}`;
+  }).join('');
+
+  const q = normalizeName(_rd.filter);
+  const players = [...rosterData.players].filter(p => !q || normalizeName(p.name).includes(q) || (p.aliases || []).some(a => normalizeName(a.value).includes(q)))
+    .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.name.localeCompare(b.name));
+  const rows = players.map(p => {
+    const k = normalizeName(p.name);
+    return `<tr>
+      <td class="rd-name">${playerNameHtml(p.name)}</td>
+      <td>${roleSel('rdRole_' + k, p.role, `rdSavePlayer('${k}')`)}</td>
+      <td>${clsSel('rdClass_' + k, p.role, p.class).replace('<select ', `<select onchange="rdSavePlayer('${k}')" `)}</td>
+      <td style="text-align:center;"><input type="checkbox" id="rdAlt_${k}" ${p.isAlt ? 'checked' : ''} onchange="rdSavePlayer('${k}')"></td>
+      <td><div class="rd-aliases">${(p.aliases || []).map((a, i) => `<span class="rd-alias" title="${ALIAS_TYPES[a.type] || a.type}${a.source ? ' · from ' + escHtml(a.source) : ''}${a.addedAt ? ' · added ' + escHtml(a.addedAt.slice(0, 10)) : ''}"><span class="rd-alias-type">${a.type === 'discord' ? 'Discord' : a.type === 'softres' ? 'SR' : 'alt'}</span>${escHtml(a.value)}<button class="x-btn" onclick="rdRemoveAlias('${k}',${i})" title="Remove alias">✕</button></span>`).join('')}
+        <span class="rd-add-alias"><select id="rdAt_${k}" class="roster-edit-sel">${Object.entries(ALIAS_TYPES).map(([t, l]) => `<option value="${t}">${l}</option>`).join('')}</select><input id="rdAv_${k}" class="gl-input" placeholder="+ alias" onkeydown="if(event.key==='Enter')rdAddAlias('${k}')"><button class="ghost-btn" onclick="rdAddAlias('${k}')">Add</button></span></div></td>
+    </tr>`;
+  }).join('');
+  const ignored = rosterData.excluded || [];
+
+  panel.innerHTML = `<div class="rd-page">
+    <div class="section-title">Unrecognised names ${inbox.length ? `<span class="nav-count">${inbox.length}</span>` : ''}</div>
+    <p class="rules-intro">Names from softres sheets, CLAs, the loot log and Gargul exports that don't match a raider. Assigning a name makes it an alias of that raider for every raid, past ones included — you'll see what changes before it's saved.</p>
+    ${inbox.length ? `<div style="overflow-x:auto;"><table class="mini-table rd-table"><thead><tr><th>Name</th><th>Seen in</th><th></th></tr></thead><tbody>${inboxRows}</tbody></table></div>`
+      : '<div class="gl-empty">Every name matches a raider.</div>'}
+    <div class="section-title" style="margin-top:30px;">Raiders <span style="color:var(--text-dim);font-size:15px;letter-spacing:0.05em;">${rosterData.players.length}</span></div>
+    <p class="rules-intro">Aliases: alternate spellings and alt characters (“alt”), the name someone uses on softres (“SR”), and Discord IDs (used once Raid-Helper sign-ups are linked). Realm suffixes like “-Dreamscythe” are ignored everywhere.</p>
+    <input class="gl-input" style="max-width:260px;margin-bottom:10px;" placeholder="Filter raiders or aliases…" value="${escHtml(_rd.filter)}" oninput="_rd.filter=this.value;clearTimeout(_rd.t);_rd.t=setTimeout(()=>{renderRaidersPanel();const i=document.querySelector('#raidersPanel input[placeholder^=Filter]');i?.focus();i?.setSelectionRange(i.value.length,i.value.length);},250)">
+    <div style="overflow-x:auto;"><table class="mini-table rd-table rd-list"><thead><tr><th>Raider</th><th>Role</th><th>Class</th><th>Alt</th><th>Aliases</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${ignored.length ? `<details class="rd-ignored"><summary class="subtle-link">Ignored names (${ignored.length})</summary><div class="rd-aliases" style="margin-top:8px;">
+      ${ignored.map((n, i) => `<span class="rd-alias">${escHtml(canonicalNames[n] || n)}<button class="x-btn" onclick="rdUnignore(${i})" title="Stop ignoring">↩</button></span>`).join('')}</div></details>` : ''}
+  </div>`;
+
+  for (const e of inbox) {
+    const c = document.getElementById('rdAc_' + e.key);
+    if (c) buildAutocomplete({ container: c, inputId: 'rdAcIn_' + e.key, placeholder: 'Raider…', items: rosterData.players.map(p => ({ value: normalizeName(p.name), label: p.name })).sort((a, b) => a.label.localeCompare(b.label)), renderOption: v => playerNameHtml(v.label) });
+  }
+  if (_rd.focus) {
+    const row = document.getElementById('rdi_' + _rd.focus);
+    if (row) requestAnimationFrame(() => row.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    _rd.focus = '';
+  }
+}
+function rdRoleChanged(id) {
+  const role = document.getElementById(id)?.value;
+  const clsId = id.replace('Role', 'Class'), el = document.getElementById(clsId); if (!el) return;
+  const cur = el.value;
+  el.innerHTML = (ROLE_CLASSES[role] || CLASSES).map(c => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('');
+}
+
+// Apply a roster change after showing what it does to past raids. Returns true if saved.
+async function _rdCommit(mutate, what) {
+  let lines;
+  try { lines = previewRosterChange(mutate); } catch (e) { flash(e.message, 'error'); return false; }
+  if (lines.length && !confirm(`${what}\n\nThis changes past raids:\n• ${lines.join('\n• ')}\n\nSave?`)) return false;
+  mutate();
+  rebuildClassMap();
+  await saveRosterToGitHub();
+  refreshAll();
+  flash(lines.length ? `${what} — ${lines.length} raider${lines.length === 1 ? '' : 's'} updated` : what);
+  return true;
+}
+function _rdEntry(key) { return unrecognizedNames().find(e => e.key === key); }
+function _aliasTypeFor(e) { return Object.keys(e.seen).length === 1 && e.seen.softres ? 'softres' : 'name'; }
+function _addAlias(p, type, value, source) {
+  p.aliases ||= [];
+  const nv = type === 'discord' ? String(value).trim() : normalizeName(baseName(value));
+  if (p.aliases.some(a => a.type === type && (type === 'discord' ? a.value === nv : normalizeName(baseName(a.value)) === nv))) return;
+  p.aliases.push({ type, value: String(value).trim(), addedAt: new Date().toISOString(), source });
+}
+
+async function rdAssign(nameKey, playerKey) {
+  const e = _rdEntry(nameKey); if (!e) return;
+  playerKey ||= document.getElementById('rdAcIn_' + nameKey)?.dataset.value;
+  if (!playerKey || !rosterPlayer(playerKey)) { flash('Pick a raider from the list first.', 'error'); return; }
+  const who = rosterPlayer(playerKey).name;
+  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), _aliasTypeFor(e), e.name, Object.keys(e.seen).join(',')), `“${e.name}” is now an alias of ${who}`);
+}
+async function rdCreate(nameKey) {
+  const e = _rdEntry(nameKey); if (!e) return;
+  const name = document.getElementById('rdcName')?.value.trim(), role = document.getElementById('rdcRole')?.value, cls = document.getElementById('rdcClass')?.value;
+  const isAlt = !!document.getElementById('rdcAlt')?.checked;
+  if (!name || !role || !cls) { flash('Name, role and class are needed.', 'error'); return; }
+  if (rosterPlayer(normalizeName(name))) { flash(`${name} is already a raider — assign the name to them instead.`, 'error'); return; }
+  const ok = await _rdCommit(() => {
+    const p = { name, role, class: cls, isAlt, addedAt: todayMST(), aliases: [] };
+    if (normalizeName(baseName(e.name)) !== normalizeName(name)) _addAlias(p, _aliasTypeFor(e), e.name, Object.keys(e.seen).join(','));
+    rosterData.players.push(p);
+  }, `Added raider ${name}`);
+  if (ok) _rd.creating = '';
+}
+async function rdIgnore(nameKey) {
+  const e = _rdEntry(nameKey); if (!e) return;
+  rosterData.excluded ||= [];
+  if (!rosterData.excluded.includes(e.name)) rosterData.excluded.push(e.name);
+  await saveRosterToGitHub(); refreshAll();
+}
+async function rdUnignore(i) {
+  rosterData.excluded?.splice(i, 1);
+  await saveRosterToGitHub(); refreshAll();
+}
+async function rdAddAlias(playerKey) {
+  const p = rosterPlayer(playerKey); if (!p) return;
+  const type = document.getElementById('rdAt_' + playerKey)?.value || 'name';
+  const value = document.getElementById('rdAv_' + playerKey)?.value.trim();
+  if (!value) return;
+  if (type === 'discord' && !/^\d{15,22}$/.test(value)) { flash('A Discord ID is a long number (right-click the user in Discord → Copy User ID).', 'error'); return; }
+  const owner = type !== 'discord' && rosterPlayer(normalizeName(baseName(value)));
+  if (owner && owner !== p) { flash(`${value} is another raider's name.`, 'error'); return; }
+  const taken = rosterData.players.find(o => o !== p && (o.aliases || []).some(a => a.type === type && normalizeName(baseName(a.value)) === normalizeName(baseName(value))));
+  if (taken) { flash(`${value} is already an alias of ${taken.name}.`, 'error'); return; }
+  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), type, value, 'manual'), `Added alias “${value}” to ${p.name}`);
+}
+async function rdRemoveAlias(playerKey, i) {
+  const p = rosterPlayer(playerKey), a = p?.aliases?.[i]; if (!a) return;
+  await _rdCommit(() => rosterPlayer(playerKey).aliases.splice(i, 1), `Removed alias “${a.value}” from ${p.name}`);
+}
+async function rdSavePlayer(playerKey) {
+  const p = rosterPlayer(playerKey); if (!p) return;
+  const role = document.getElementById('rdRole_' + playerKey)?.value, cls = document.getElementById('rdClass_' + playerKey)?.value;
+  Object.assign(p, { role, class: cls, isAlt: !!document.getElementById('rdAlt_' + playerKey)?.checked });
+  rebuildClassMap();
+  await saveRosterToGitHub();
+  refreshAll();
+}
+
 
 // Molten Core item table as softres.it serves it (captured 2026-09-26), trimmed to
 // [id, name, from, classRestriction[], sharedBosses[], slot, quality]. Used ONLY by
@@ -6407,7 +6706,7 @@ const wfDebug = {
     for (const r of raidsData.raids) {
       if (dates[r.date]) issues.push(`Two raids on ${r.date}: ${dates[r.date]} / ${r.name}`); dates[r.date] = r.name;
       for (const l of r.loot) {
-        if (!rosterPlayer(normalizeName(l.recipient))) issues.push(`${r.date}: loot recipient "${l.recipient}" not on roster`);
+        if (!rosterPlayer(lootKey(l))) issues.push(`${r.date}: loot recipient "${l.recipient}" not on roster`);
         if (!glossary.items[l.itemKey]) issues.push(`${r.date}: loot item ${l.name} (${l.itemKey}) not in glossary`);
       }
       for (const s of r.softres) {
@@ -6735,6 +7034,15 @@ async function applyDemoFixture(fx) {
   // item he has lost several times and also reserves Bunzypoo's item, where only Bunzypoo has a bonus —
   // so a Gargul import from the dashboard shows per-item bonuses on both characters.
   const bunzieTonight = addDemoBunzie(fx, players, raids, parsed);
+  // Unrecognised names for Management → Raiders: Bunzie's alt and a pug showed up in the last CLA
+  const lastClaFx = [...fx.raids].reverse().find(r => r.cla);
+  if (lastClaFx) {
+    const raid = raids[fx.raids.indexOf(lastClaFx)], p = parsed[lastClaFx.date];
+    for (const nm of ['Bunziealt', 'Randompug']) {
+      const k = normalizeName(nm);
+      raid.attendance.cla.push(k); p.claPresence.push(k); p.canonicalNames[k] = nm;
+    }
+  }
   // The latest raid gets a Gargul post-raid export with one MS > OS award the loot master forgot
   // to log (an item nobody reserved, so leaving it out doesn't change anyone's bad luck protection).
   const lastFx = fx.raids[fx.raids.length - 1], lastRaid = raids[raids.length - 1];
@@ -6753,7 +7061,7 @@ async function applyDemoFixture(fx) {
   // Current gear on the latest CLA: Molten Core pieces, what they won first
   const lastCla = [...fx.raids].reverse().find(r => r.cla);
   if (lastCla) {
-    const won = {}; for (const r of raids) for (const l of r.loot) (won[normalizeName(l.recipient)] ||= []).push(l.itemKey);
+    const won = {}; for (const r of raids) for (const l of r.loot) (won[lootKey(l)] ||= []).push(l.itemKey);
     parsed[lastCla.date].gearListing = Object.fromEntries(players.map(p => [normalizeName(p.name), demoGearFor(p, won[normalizeName(p.name)] || [])]));
   }
   // The open sheet becomes today's active raid
