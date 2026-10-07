@@ -1764,6 +1764,15 @@
 .raid-dot.severe { background: transparent; border: 2px solid #e05a55; }
 .rule-ctl-col { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .rule-sub { display: flex; align-items: center; gap: 6px; }
+.prc { margin-top: 10px; border: 1px solid rgba(240,176,96,0.35); border-radius: 6px; background: rgba(240,176,96,0.05); padding: 6px 10px; }
+.prc-line { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 16px; }
+.prc-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: #f0b060; margin-right: 6px; }
+.prc-sep { color: var(--text-dim); }
+.prc-chip { background: none; border: 0; padding: 2px 4px; color: var(--text); font: inherit; cursor: pointer; border-bottom: 1px dashed rgba(240,176,96,0.5); }
+.prc-chip:hover, .prc-chip.on { color: #f0b060; }
+.prc-chip.over { color: #f08080; }
+.prc-list { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(240,176,96,0.2); font-size: 16px; }
+.prc-item { white-space: normal; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -4507,6 +4516,26 @@ function raidHelperCounts(raid) {
   return c;
 }
 
+// ── Pre-raid checks for an active raid ──
+// [{ id, label, items: [{ key, name, detail, unknown? }] }] — only checks that found something
+function preRaidChecks(raid) {
+  const res = raidReserves(raid), led = derived().ledger, out = [];
+  const raiders = rosterData.players.filter(p => !rosterData.excluded?.includes(p.name)).map(p => [normalizeName(p.name), p]);
+  const add = (id, label, items) => { if (items.length) out.push({ id, label, items }); };
+  const why = a => a.severe ? 'severe absence' : a.bench ? 'benched' : a.flag || 'absent';
+  add('noreserve', n => `${n} expected but haven't reserved`, raiders.filter(([k]) => attendanceOf(raid, k).status === 'present' && !reservedCount(raid, k))
+    .map(([k, p]) => ({ key: k, name: p.name, detail: `${led[k]?.available ?? 0} SR${led[k]?.available === 1 ? '' : 's'} available` })));
+  add('reservedout', n => `${n} reserved but ${n === 1 ? "isn't" : "aren't"} expected`, raiders.filter(([k]) => reservedCount(raid, k) && attendanceOf(raid, k).status !== 'present')
+    .map(([k, p]) => ({ key: k, name: p.name, detail: `${why(attendanceOf(raid, k))} · ${reservedCount(raid, k)} reserve${reservedCount(raid, k) === 1 ? '' : 's'} (not charged)` })));
+  add('unsure', n => `${n} unconfirmed`, raiders.filter(([k]) => { const a = attendanceOf(raid, k); return a.status === 'present' && ['unconfirmed', 'no sign-up'].includes(a.flag); })
+    .map(([k, p]) => ({ key: k, name: p.name, detail: attendanceOf(raid, k).flag === 'no sign-up' ? 'no Raid-Helper sign-up (expected because they reserved)' : 'not confirmed in the comp' })));
+  add('unknown', n => `${n} unknown name${n === 1 ? '' : 's'}`, unrecognizedNames().filter(e => Object.values(e.seen).some(s => s.has(raid.id)))
+    .map(e => ({ key: e.key, name: e.name, unknown: true, detail: Object.entries(e.seen).filter(([, s]) => s.has(raid.id)).map(([src]) => ({ softres: 'softres', cla: 'CLA', loot: 'loot log', gargul: 'Gargul', raidhelper: 'Raid-Helper' })[src] || src).join(', ') })));
+  add('over', n => `${n} over-reserved`, raiders.map(([k, p]) => [k, p, led[k]?.events.find(e => e.raidId === raid.id && e.over > 0)]).filter(x => x[2])
+    .map(([k, p, e]) => ({ key: k, name: p.name, detail: `reserved ${e.reserved}, has ${e.reserved - e.over}` })));
+  return out;
+}
+
 // ── Gargul post-raid export (what actually got handed out in game) ──
 // base64(zlib(JSON)): { ID, playerMap, data:[{ itemID, awardedBy, awardedTo, isBonusLoot, received,
 // timestamp, rolls:[{ amount, player, timestamp, min, max }] }], checksum }. The checksum is Adler-32
@@ -5390,10 +5419,11 @@ function renderRaidDetail(panel, raid) {
         <button class="small-gold-btn" onclick="saveRaidMeta('${raid.id}')">SAVE</button>
         <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Cancel</button></div>` : ''}
       ${raidHelperLineHtml(raid)}
-      ${overs.length && writeToken ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
+      ${raid.status === 'active' && writeToken ? preRaidPanelHtml(raid) : ''}
+      ${overs.length && writeToken && raid.status !== 'active' ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
         ${raid.status === 'active' ? '' : '<span style="opacity:0.8;"> — raid ended; the excess was forgiven (balances never go below 0).</span>'}</div>` : ''}
-      ${unknown.length && writeToken ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until matched. <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(unknown[0].name)}')">Sort them out on the Roster page →</a></div>` : ''}
+      ${unknown.length && writeToken && raid.status !== 'active' ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until matched. <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(unknown[0].name)}')">Sort them out on the Roster page →</a></div>` : ''}
       <div class="sub-tabs">${tabs.map(([k, l]) => `<button class="sub-tab ${sub === k ? 'on' : ''}" onclick="setRaidSub('${k}')">${l}${k === 'reserves' ? ` <span class="count">${Object.keys(raidReserves(raid)).length}</span>` : k === 'loot' ? ` <span class="count">${raid.loot.length}</span>` : ''}</button>`).join('')}</div>
     </div>
     <div id="raidSub"></div>`;
@@ -5462,6 +5492,19 @@ async function deleteRaid(id) {
   await saveRaids().catch(() => {});
   closeRaid(); refreshAll();
 }
+
+// ── Pre-raid check: one line of counts; click a count to see who ──
+function preRaidPanelHtml(raid) {
+  const checks = preRaidChecks(raid); if (!checks.length) return '';
+  if (!checks.some(c => c.id === _raidView.prc)) _raidView.prc = '';
+  const open = checks.find(c => c.id === _raidView.prc);
+  return `<div class="prc ${open ? 'open' : ''}">
+    <div class="prc-line"><span class="prc-title">Pre-raid</span>${checks.map(c => `<button class="prc-chip ${c.id} ${c.id === _raidView.prc ? 'on' : ''}" onclick="togglePreRaid('${c.id}')">${c.label(c.items.length)}</button>`).join('<span class="prc-sep">·</span>')}</div>
+    ${open ? `<div class="prc-list">${open.items.map(x => `<span class="prc-item">${x.unknown ? `<a class="rd-link" onclick="openRaidersInbox('${jsAttr(x.name)}')">${escHtml(x.name)}</a>` : playerNameHtml(x.name)} <span class="iv-dim">${escHtml(x.detail)}</span></span>`).join('')}
+      ${open.id === 'unknown' ? `<a class="subtle-link" onclick="openRaidersInbox('${jsAttr(open.items[0].name)}')">Sort them out on the Roster page →</a>` : open.id === 'noreserve' || open.id === 'over' ? `<a class="subtle-link" onclick="setRaidSub('reserves')">Reserves →</a>` : `<a class="subtle-link" onclick="setRaidSub('attendance')">Attendance →</a>`}</div>` : ''}
+  </div>`;
+}
+function togglePreRaid(id) { _raidView.prc = _raidView.prc === id ? '' : id; renderRaidsPanel(); }
 
 // ── Raid-Helper ─────────────────────────────────────────────────
 let _nrRh = { id: null, data: null };
@@ -7354,6 +7397,8 @@ function demoRaidHelper(fx, players, raid) {
   });
   const absent = players.find(p => !everyone.includes(p) && !p.isAlt);
   if (absent) sign(absent, everyone.length, 'Absence');
+  const noRes = players.find(p => !everyone.includes(p) && p !== absent && !p.isAlt);
+  if (noRes) { sign(noRes, everyone.length + 1); slot(noRes, everyone.length + 1, 'confirmed'); }  // signed up, never reserved
   signUps.push({ name: 'Tinkerbelle', userId: id('Tinkerbelle'), className: 'Priest', specName: 'Holy', roleName: 'Healers', status: 'primary', entryTime: t0 + 99000, position: signUps.length + 1 });
   raid.raidHelper = { eventId: '1550000000000000001', url: 'https://raid-helper.xyz/raidplan/1550000000000000001', demo: true,
     event: { title: 'Molten Core', displayTitle: 'Molten Core', date: raid.date, time: '19:30', startTime: null, endTime: null, description: 'Weekly MC — SR on softres.', leaderName: 'Bunz',
