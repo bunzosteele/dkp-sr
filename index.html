@@ -1591,7 +1591,7 @@
   .nc-row .gl-input { flex: 1; min-width: 0; }
   .nc-row input:disabled, .nc-row button:disabled { opacity: 0.45; cursor: not-allowed; }
   .ov-table th:not(:first-child), .ov-table td:not(:first-child) { text-align: center !important; }
-  .ov-table th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; padding-right: 4px; letter-spacing: 0.14em; }
+  .ov-table th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; padding-right: 4px; letter-spacing: 0.1em; }
   .ov-table .att-cell { justify-content: center; }
 
   /* Raid loot list: SR and MS > OS tables */
@@ -1714,11 +1714,13 @@
 .rd-alias { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px 1px 6px; font-size: 16px; }
 .rd-alias-type { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold-light); opacity: 0.8; }
 .rd-add-alias { display: inline-flex; gap: 4px; align-items: center; }
-.rd-add-alias .gl-input { width: 130px; padding: 3px 6px; }
+.rd-add-alias .gl-input { width: 220px; padding: 3px 6px; }
 .rd-add-alias select { padding: 3px 4px; }
 .rd-link { cursor: pointer; text-decoration: none; }
 .rd-ignored { margin-top: 18px; }
 @media (max-width: 640px) { .rd-table td { display: block; border: 0; padding: 3px 4px; } .rd-table tr { display: block; border-bottom: 1px solid var(--border); padding: 6px 0; } .rd-table thead { display: none; } .rd-actions { justify-content: flex-start; } }
+
+.compact-table th { white-space: nowrap; letter-spacing: 0.08em; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -1751,7 +1753,6 @@
         </button>
         <div class="nav-dropdown-menu" id="navDdGuildMgmtMenu">
           <button class="group-btn" data-mode="roster" onclick="navDropdownSelect('navDdGuildMgmt','roster')">Roster</button>
-          <button class="group-btn" data-mode="raiders" onclick="navDropdownSelect('navDdGuildMgmt','raiders')">Raiders</button>
           <button class="group-btn" data-mode="glossary" onclick="navDropdownSelect('navDdGuildMgmt','glossary')">Item Glossary</button>
           <button class="group-btn" data-mode="rules" onclick="navDropdownSelect('navDdGuildMgmt','rules')">SR Rules</button>
         </div>
@@ -1770,7 +1771,6 @@
   <div id="raidsPanel" style="display:none;padding:8px 0;"></div>
   <div id="itemsPanel" style="display:none;padding:8px 0;"></div>
   <div id="rosterPanel" style="display:none;padding:8px 0;"></div>
-  <div id="raidersPanel" style="display:none;padding:8px 0;"></div>
   <div id="glossaryPanel" style="display:none;padding:8px 0;"></div>
   <div id="rulesPanel" style="display:none;padding:8px 0;"></div>
 
@@ -3964,11 +3964,14 @@ function rosterPlayer(key) { return rosterData.players.find(p => normalizeName(p
 // ── Name matching ─────────────────────────────────────────────
 // WoW Forever names are "First Last". Softres, CLA and Gargul names may be the first name,
 // the last name, or both — accent-insensitive — and Gargul adds the realm ("Bunzie-Dreamscythe").
-// A name resolves, in order, by: Discord ID → exact raider name → any alias a raider has
-// (alternate spelling, alt character, softres name) → a first or last name that belongs to
-// exactly one raider. Ambiguous or unknown names stay unmatched (and land in the Raiders
-// inbox) rather than being guessed. Aliases are retroactive: adding one re-attributes history.
-const ALIAS_TYPES = { name: 'Name / alt', softres: 'Softres', discord: 'Discord ID' };
+// A name resolves, in order, by: Discord ID → exact raider name → any of the raider's AKAs
+// (alternate spellings, alt characters, softres names; a 15–22 digit AKA is a Discord ID) →
+// a first or last name that belongs to exactly one raider. Ambiguous or unknown names stay
+// unmatched (and land in the Roster page's inbox) rather than being guessed. AKAs are
+// retroactive: adding one re-attributes history.
+// p.aliases is a plain list of strings (older entries may be { value } objects).
+const aliasValue = a => String(typeof a === 'string' ? a : a?.value ?? '').trim();
+const isDiscordId = v => /^\d{15,22}$/.test(String(v).trim());
 // Character names never contain "-": anything after one is the realm
 function baseName(name) { return String(name ?? '').split('-')[0].trim(); }
 let _nameIndex = null;
@@ -3983,8 +3986,9 @@ function _buildNameIndex() {
       part.get(wk).add(k);
     }
     for (const a of p.aliases || []) {
-      if (a.type === 'discord') discord.set(String(a.value).trim(), k);
-      else { const ak = normalizeName(baseName(a.value)); if (ak && !alias.has(ak)) alias.set(ak, k); }
+      const v = aliasValue(a);
+      if (isDiscordId(v)) discord.set(v, k);
+      else { const ak = normalizeName(baseName(v)); if (ak && !alias.has(ak)) alias.set(ak, k); }
     }
   }
   return { full, part, alias, discord, memo: new Map() };
@@ -4048,7 +4052,7 @@ function suggestRaidersFor(name) {
     const k = normalizeName(p.name);
     const words = String(p.name).split(/\s+/).map(normalizeName).filter(w => w.length >= 3);
     let score = null;
-    for (const w of [k, ...words, ...(p.aliases || []).filter(a => a.type !== 'discord').map(a => normalizeName(baseName(a.value)))]) {
+    for (const w of [k, ...words, ...(p.aliases || []).map(aliasValue).filter(v => !isDiscordId(v)).map(v => normalizeName(baseName(v)))]) {
       if (!w) continue;
       if (u.includes(w) || w.includes(u)) score = Math.min(score ?? 9, 0);
       else if (Math.abs(w.length - u.length) <= 2 && _lev(w, u) <= 2) score = Math.min(score ?? 9, _lev(w, u));
@@ -4543,8 +4547,8 @@ function flash(msg, type = 'success') { setStatus(msg, type); }
 // Navigation
 // ═════════════════════════════════════════════════════════════════════════════
 const _navDropdowns = ['navDdGuildMgmt'];
-const _navDropdownModes = { navDdGuildMgmt: ['roster', 'raiders', 'glossary', 'rules'] };
-const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', raiders: 'raidersPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
+const _navDropdownModes = { navDdGuildMgmt: ['roster', 'glossary', 'rules'] };
+const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
 
 function navDropdownToggle(id) {
   const menu = document.getElementById(id + 'Menu'), btn = document.getElementById(id + 'Btn');
@@ -4565,7 +4569,7 @@ document.addEventListener('click', e => {
 });
 
 function setGrouping(mode) {
-  const legacy = { loot: 'raids', lootlog: 'raids', cla: 'raids', attendance: 'roster' };
+  const legacy = { loot: 'raids', lootlog: 'raids', cla: 'raids', attendance: 'roster', raiders: 'roster' };
   mode = legacy[mode] || mode;
   if (mode !== 'role' && !PANEL_IDS[mode]) mode = 'role';
   if (!writeToken && _navDropdownModes.navDdGuildMgmt.includes(mode)) mode = 'role'; // management is officers-only
@@ -4589,7 +4593,6 @@ function renderCurrent() {
   else if (groupingMode === 'raids') renderRaidsPanel();
   else if (groupingMode === 'items') renderItemsPanel();
   else if (groupingMode === 'roster') renderRosterPanel();
-  else if (groupingMode === 'raiders') renderRaidersPanel();
   else if (groupingMode === 'glossary') renderGlossaryPanel();
   else if (groupingMode === 'rules') renderRulesPanel();
 }
@@ -4767,12 +4770,11 @@ function playerRowHtml(p, raids, opts = {}) {
 
 function tableColgroup(withAction, withCurrent) {
   if (withAction) // compact variant for the Loot tab (has Current + Award columns)
-    return `<colgroup><col style="width:22ch;">${withCurrent ? '<col style="width:20ch;">' : ''}<col style="width:20px;"><col style="width:72px;"><col style="width:72px;"><col><col style="width:36px;"><col style="width:100px;"><col style="width:74px;"></colgroup>`;
+    return `<colgroup><col style="width:22ch;">${withCurrent ? '<col style="width:20ch;">' : ''}<col style="width:20px;"><col style="width:104px;"><col style="width:96px;"><col><col style="width:36px;"><col style="width:100px;"><col style="width:74px;"></colgroup>`;
   // Guild Overview: the name column fits 25 characters plus the arrow; SR Balance and Consumes get
   // equal shares, # is narrow, Attendance has room for its full bar, and Raids takes what's left.
   // Needs table-layout: fixed — .ov-table.
-  const one = '<col style="width:11.5%;">';
-  return `<colgroup><col style="width:calc(28ch + 24px);"><col style="width:32px;">${one}${one}<col><col style="width:5.5%;"><col style="width:17.5%;"></colgroup>`;
+  return `<colgroup><col style="width:calc(28ch + 24px);"><col style="width:32px;"><col style="width:13.5%;"><col style="width:12%;"><col><col style="width:5.5%;"><col style="width:16.5%;"></colgroup>`;
 }
 function tableHeadHtml(th, withAction, withCurrent) {
   return `<tr>${th('Player', 'player', 'left')}${withCurrent ? '<th style="text-align:left;" title="Currently equipped in this slot, from the most recent CLA gear listing">Current</th>' : ''}<th></th>
@@ -4974,7 +4976,7 @@ function toggleLoot(td, playerName) {
           <label style="font-size:14px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">Alt? <input type="checkbox" id="editAlt_${key}" ${rp.isAlt ? 'checked' : ''}></label>
           <button class="small-gold-btn" onclick="rosterUpdatePlayer('${jsAttr(playerName)}', document.getElementById('editRole_${key}').value, document.getElementById('editClass_${key}').value, document.getElementById('editAlt_${key}').checked)">SAVE</button>
           <button class="ghost-btn" onclick="rosterRemovePlayer('${jsAttr(playerName)}')">Remove</button>
-        </div>`;
+        </div>` + akaEditorHtml(key);
     }
   }
   // SR adjustments
@@ -5194,7 +5196,7 @@ function renderRaidDetail(panel, raid) {
       ${overs.length && writeToken ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
         ${raid.status === 'active' ? '' : '<span style="opacity:0.8;"> — raid ended; the excess was forgiven (balances never go below 0).</span>'}</div>` : ''}
-      ${unknown.length && writeToken ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until matched. <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(unknown[0].name)}')">Assign them in Raiders →</a></div>` : ''}
+      ${unknown.length && writeToken ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until matched. <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(unknown[0].name)}')">Sort them out on the Roster page →</a></div>` : ''}
       <div class="sub-tabs">${tabs.map(([k, l]) => `<button class="sub-tab ${sub === k ? 'on' : ''}" onclick="setRaidSub('${k}')">${l}${k === 'reserves' ? ` <span class="count">${Object.keys(raidReserves(raid)).length}</span>` : k === 'loot' ? ` <span class="count">${raid.loot.length}</span>` : ''}</button>`).join('')}</div>
     </div>
     <div id="raidSub"></div>`;
@@ -5885,11 +5887,9 @@ function renderRosterPanel() {
           <button id="rosterAddBtn" class="gloss-btn-saveable small-gold-btn" onclick="rosterAddPlayer()">ADD</button>
         </div>
       </div>
-      <div id="attendanceClaRecs" style="flex:1;min-width:200px;"></div>
+      <div id="attendanceClaRecs" style="flex:1 1 100%;min-width:0;"></div>
     </div>`;
-  const unknown = unrecognizedNames().length;
-  if (unknown) document.getElementById('attendanceClaRecs').innerHTML = `<div class="sheet-card"><div class="gl-col-title">Unrecognised names</div>
-    <div>${unknown} name${unknown === 1 ? '' : 's'} from softres, CLAs, loot or Gargul don't match a raider. <a class="subtle-link" onclick="setGrouping('raiders')">Assign or ignore them in Raiders →</a></div></div>`;
+  if (writeToken) { document.getElementById('attendanceClaRecs').innerHTML = raidersInboxHtml(); wireRaidersInbox(); }
   const sc = document.getElementById('rosterScroll');
   if (sc) requestAnimationFrame(() => sc.scrollLeft = sc.scrollWidth);
 }
@@ -6397,22 +6397,22 @@ function itemDetailHtml(key) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Management → Raiders: aliases + the unrecognised-names inbox
+// Roster page: AKAs (in each raider's dropdown) + the unrecognised-names inbox (bottom)
 // Every name seen in softres sheets, CLAs, the loot log and Gargul exports that doesn't
-// resolve to a raider lands in the inbox. Assigning it adds an alias to that raider, which
-// is retroactive: past reserves, attendance and loot are re-attributed, so each change is
+// resolve to a raider lands in the inbox. Assigning it adds an AKA to that raider, which is
+// retroactive: past reserves, attendance and loot are re-attributed, so each change is
 // previewed (SR balances, raids, loot, bad luck items) before it's saved.
 // ═════════════════════════════════════════════════════════════════════════════
-let _rd = { focus: '', creating: '', filter: '' };
+let _rd = { focus: '', creating: '' };
 const RD_SOURCE_LABEL = { softres: 'Softres', cla: 'CLA', loot: 'Loot log', gargul: 'Gargul export' };
 
 function openRaidersInbox(name) {
   _rd.focus = normalizeName(baseName(name || ''));
-  setGrouping('raiders');
+  setGrouping('roster');
 }
 function notOnRosterTag(name) {
   if (!writeToken) return '';
-  return ` <a class="tag-warn rd-link" onclick="event.stopPropagation();openRaidersInbox('${jsAttr(name)}')" title="Sort it out in Management → Raiders">not on roster</a>`;
+  return ` <a class="tag-warn rd-link" onclick="event.stopPropagation();openRaidersInbox('${jsAttr(name)}')" title="Sort it out on the Roster page">not on roster</a>`;
 }
 
 function updateRaidersBadge() {
@@ -6425,84 +6425,72 @@ function updateRaidersBadge() {
     b.textContent = n; b.title = `${n} unrecognised name${n === 1 ? '' : 's'}`;
   };
   set(document.getElementById('navDdGuildMgmtBtn'), 'rd-badge-btn');
-  set(document.querySelector('#navDdGuildMgmtMenu [data-mode="raiders"]'), 'rd-badge-item');
+  set(document.querySelector('#navDdGuildMgmtMenu [data-mode="roster"]'), 'rd-badge-item');
 }
 
-function renderRaidersPanel() {
-  const panel = document.getElementById('raidersPanel'); if (!panel) return;
-  const inbox = unrecognizedNames();
-  const roleSel = (id, cur, then = '') => `<select id="${id}" class="roster-edit-sel" onchange="rdRoleChanged('${id}');${then}">${ROLE_ORDER.map(r => `<option ${r === cur ? 'selected' : ''}>${r}</option>`).join('')}</select>`;
-  const clsSel = (id, role, cur) => `<select id="${id}" class="roster-edit-sel">${(ROLE_CLASSES[role] || CLASSES).map(c => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
-  const seenHtml = e => Object.entries(e.seen).map(([src, raids]) => `<span class="rd-seen">${RD_SOURCE_LABEL[src] || src} · ${raids.size} raid${raids.size === 1 ? '' : 's'}</span>`).join('');
+// "Also known as" block for a raider's dropdown on the Roster page
+function akaEditorHtml(key) {
+  const p = rosterPlayer(key); if (!p) return '';
+  const akas = (p.aliases || []).map(aliasValue).filter(Boolean);
+  return `<div class="expand-section-title" style="margin-top:14px;">Also known as</div>
+    <div class="rd-aliases">
+      ${akas.map((v, i) => `<span class="rd-alias" title="${isDiscordId(v) ? 'Discord ID' : 'Matches this name on softres, CLAs, the loot log and Gargul (realm suffixes ignored)'}">${isDiscordId(v) ? '<span class="rd-alias-type">Discord</span>' : ''}${escHtml(v)}<button class="x-btn" onclick="event.stopPropagation();rdRemoveAlias('${key}',${i})" title="Remove">✕</button></span>`).join('')}
+      <span class="rd-add-alias"><input id="rdAv_${key}" class="gl-input" placeholder="Alt, spelling or Discord ID" onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter')rdAddAlias('${key}')"><button class="ghost-btn" onclick="event.stopPropagation();rdAddAlias('${key}')">Add</button></span>
+    </div>`;
+}
 
-  const inboxRows = inbox.map(e => {
-    const id = 'rdi_' + e.key;
-    const creating = _rd.creating === e.key;
-    return `<tr id="${id}" class="${_rd.focus === e.key ? 'rd-focus' : ''}">
+// Inbox card at the bottom of the Roster page
+function raidersInboxHtml() {
+  const inbox = unrecognizedNames();
+  const ignored = rosterData.excluded || [];
+  if (!inbox.length && !ignored.length) return '';
+  const roleSel = (id, cur) => `<select id="${id}" class="roster-edit-sel" onchange="rdRoleChanged('${id}')">${ROLE_ORDER.map(r => `<option ${r === cur ? 'selected' : ''}>${r}</option>`).join('')}</select>`;
+  const clsSel = (id, role) => `<select id="${id}" class="roster-edit-sel">${(ROLE_CLASSES[role] || CLASSES).map(c => `<option>${c}</option>`).join('')}</select>`;
+  const seenHtml = e => Object.entries(e.seen).map(([src, raids]) => `<span class="rd-seen">${RD_SOURCE_LABEL[src] || src} · ${raids.size} raid${raids.size === 1 ? '' : 's'}</span>`).join('');
+  const rows = inbox.map(e => `<tr id="rdi_${e.key}" class="${_rd.focus === e.key ? 'rd-focus' : ''}">
       <td class="rd-name">${escHtml(e.name)}</td>
       <td><div class="rd-seen-list">${seenHtml(e)}</div></td>
       <td><div class="rd-actions">
-        ${e.suggest.map(k => `<button class="small-gold-btn" onclick="rdAssign('${e.key}','${k}')" title="Add “${escHtml(e.name)}” as an alias of ${escHtml(rosterPlayer(k)?.name || k)}">→ ${escHtml(rosterPlayer(k)?.name || k)}</button>`).join('')}
+        ${e.suggest.map(k => `<button class="small-gold-btn" onclick="rdAssign('${e.key}','${k}')" title="Add “${escHtml(e.name)}” as an AKA of ${escHtml(rosterPlayer(k)?.name || k)}">→ ${escHtml(rosterPlayer(k)?.name || k)}</button>`).join('')}
         <span class="rd-assign"><span id="rdAc_${e.key}" class="rd-ac"></span><button class="ghost-btn" onclick="rdAssign('${e.key}')">Assign</button></span>
-        <button class="ghost-btn" onclick="_rd.creating=_rd.creating==='${e.key}'?'':'${e.key}';renderRaidersPanel()">New raider…</button>
+        <button class="ghost-btn" onclick="_rd.creating=_rd.creating==='${e.key}'?'':'${e.key}';renderRosterPanel()">New raider…</button>
         <button class="ghost-btn" onclick="rdIgnore('${e.key}')" title="Not a raider (a pug, a typo…) — stop listing it">Ignore</button>
       </div></td></tr>
-      ${creating ? `<tr class="rd-create"><td colspan="3"><div class="rd-create-row">
+      ${_rd.creating === e.key ? `<tr class="rd-create"><td colspan="3"><div class="rd-create-row">
         <input id="rdcName" class="gl-input" value="${escHtml(e.name)}" placeholder="Raider name (First Last)" style="width:220px;">
-        ${roleSel('rdcRole', 'Ranged DPS')}${clsSel('rdcClass', 'Ranged DPS', '')}
+        ${roleSel('rdcRole', 'Ranged DPS')}${clsSel('rdcClass', 'Ranged DPS')}
         <label class="chk"><input type="checkbox" id="rdcAlt"> Alt</label>
         <button class="small-gold-btn" onclick="rdCreate('${e.key}')">CREATE</button>
-        <span class="iv-dim">If the name differs, “${escHtml(e.name)}” is kept as an alias.</span></div></td></tr>` : ''}`;
-  }).join('');
-
-  const q = normalizeName(_rd.filter);
-  const players = [...rosterData.players].filter(p => !q || normalizeName(p.name).includes(q) || (p.aliases || []).some(a => normalizeName(a.value).includes(q)))
-    .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.name.localeCompare(b.name));
-  const rows = players.map(p => {
-    const k = normalizeName(p.name);
-    return `<tr>
-      <td class="rd-name">${playerNameHtml(p.name)}</td>
-      <td>${roleSel('rdRole_' + k, p.role, `rdSavePlayer('${k}')`)}</td>
-      <td>${clsSel('rdClass_' + k, p.role, p.class).replace('<select ', `<select onchange="rdSavePlayer('${k}')" `)}</td>
-      <td style="text-align:center;"><input type="checkbox" id="rdAlt_${k}" ${p.isAlt ? 'checked' : ''} onchange="rdSavePlayer('${k}')"></td>
-      <td><div class="rd-aliases">${(p.aliases || []).map((a, i) => `<span class="rd-alias" title="${ALIAS_TYPES[a.type] || a.type}${a.source ? ' · from ' + escHtml(a.source) : ''}${a.addedAt ? ' · added ' + escHtml(a.addedAt.slice(0, 10)) : ''}"><span class="rd-alias-type">${a.type === 'discord' ? 'Discord' : a.type === 'softres' ? 'SR' : 'alt'}</span>${escHtml(a.value)}<button class="x-btn" onclick="rdRemoveAlias('${k}',${i})" title="Remove alias">✕</button></span>`).join('')}
-        <span class="rd-add-alias"><select id="rdAt_${k}" class="roster-edit-sel">${Object.entries(ALIAS_TYPES).map(([t, l]) => `<option value="${t}">${l}</option>`).join('')}</select><input id="rdAv_${k}" class="gl-input" placeholder="+ alias" onkeydown="if(event.key==='Enter')rdAddAlias('${k}')"><button class="ghost-btn" onclick="rdAddAlias('${k}')">Add</button></span></div></td>
-    </tr>`;
-  }).join('');
-  const ignored = rosterData.excluded || [];
-
-  panel.innerHTML = `<div class="rd-page">
-    <div class="section-title">Unrecognised names ${inbox.length ? `<span class="nav-count">${inbox.length}</span>` : ''}</div>
-    <p class="rules-intro">Names from softres sheets, CLAs, the loot log and Gargul exports that don't match a raider. Assigning a name makes it an alias of that raider for every raid, past ones included — you'll see what changes before it's saved.</p>
-    ${inbox.length ? `<div style="overflow-x:auto;"><table class="mini-table rd-table"><thead><tr><th>Name</th><th>Seen in</th><th></th></tr></thead><tbody>${inboxRows}</tbody></table></div>`
-      : '<div class="gl-empty">Every name matches a raider.</div>'}
-    <div class="section-title" style="margin-top:30px;">Raiders <span style="color:var(--text-dim);font-size:15px;letter-spacing:0.05em;">${rosterData.players.length}</span></div>
-    <p class="rules-intro">Aliases: alternate spellings and alt characters (“alt”), the name someone uses on softres (“SR”), and Discord IDs (used once Raid-Helper sign-ups are linked). Realm suffixes like “-Dreamscythe” are ignored everywhere.</p>
-    <input class="gl-input" style="max-width:260px;margin-bottom:10px;" placeholder="Filter raiders or aliases…" value="${escHtml(_rd.filter)}" oninput="_rd.filter=this.value;clearTimeout(_rd.t);_rd.t=setTimeout(()=>{renderRaidersPanel();const i=document.querySelector('#raidersPanel input[placeholder^=Filter]');i?.focus();i?.setSelectionRange(i.value.length,i.value.length);},250)">
-    <div style="overflow-x:auto;"><table class="mini-table rd-table rd-list"><thead><tr><th>Raider</th><th>Role</th><th>Class</th><th>Alt</th><th>Aliases</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <span class="iv-dim">If the name differs, “${escHtml(e.name)}” is kept as an AKA.</span></div></td></tr>` : ''}`).join('');
+  return `<div class="sheet-card rd-inbox" id="rdInbox">
+    <div class="gl-col-title">Unrecognised names ${inbox.length ? `<span class="nav-count">${inbox.length}</span>` : ''}</div>
+    <div class="iv-dim" style="margin-bottom:8px;">From softres sheets, CLAs, the loot log and Gargul exports. Assigning a name adds it to that raider's AKAs for every raid, past ones included — you'll see what changes before it's saved.</div>
+    ${inbox.length ? `<div style="overflow-x:auto;"><table class="mini-table rd-table"><tbody>${rows}</tbody></table></div>` : '<div class="gl-empty">Every name matches a raider.</div>'}
     ${ignored.length ? `<details class="rd-ignored"><summary class="subtle-link">Ignored names (${ignored.length})</summary><div class="rd-aliases" style="margin-top:8px;">
       ${ignored.map((n, i) => `<span class="rd-alias">${escHtml(canonicalNames[n] || n)}<button class="x-btn" onclick="rdUnignore(${i})" title="Stop ignoring">↩</button></span>`).join('')}</div></details>` : ''}
   </div>`;
-
-  for (const e of inbox) {
+}
+// Called after the Roster page is drawn: autocompletes + scroll to a focused name
+function wireRaidersInbox() {
+  for (const e of unrecognizedNames()) {
     const c = document.getElementById('rdAc_' + e.key);
     if (c) buildAutocomplete({ container: c, inputId: 'rdAcIn_' + e.key, placeholder: 'Raider…', items: rosterData.players.map(p => ({ value: normalizeName(p.name), label: p.name })).sort((a, b) => a.label.localeCompare(b.label)), renderOption: v => playerNameHtml(v.label) });
   }
   if (_rd.focus) {
-    const row = document.getElementById('rdi_' + _rd.focus);
+    const row = document.getElementById('rdi_' + _rd.focus) || document.getElementById('rdInbox');
     if (row) requestAnimationFrame(() => row.scrollIntoView({ block: 'center', behavior: 'smooth' }));
     _rd.focus = '';
   }
 }
 function rdRoleChanged(id) {
   const role = document.getElementById(id)?.value;
-  const clsId = id.replace('Role', 'Class'), el = document.getElementById(clsId); if (!el) return;
+  const el = document.getElementById(id.replace('Role', 'Class')); if (!el) return;
   const cur = el.value;
   el.innerHTML = (ROLE_CLASSES[role] || CLASSES).map(c => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('');
 }
 
 // Apply a roster change after showing what it does to past raids. Returns true if saved.
-async function _rdCommit(mutate, what) {
+async function _rdCommit(mutate, what, reopen) {
   let lines;
   try { lines = previewRosterChange(mutate); } catch (e) { flash(e.message, 'error'); return false; }
   if (lines.length && !confirm(`${what}\n\nThis changes past raids:\n• ${lines.join('\n• ')}\n\nSave?`)) return false;
@@ -6510,16 +6498,22 @@ async function _rdCommit(mutate, what) {
   rebuildClassMap();
   await saveRosterToGitHub();
   refreshAll();
+  if (reopen) _reopenRosterRow(reopen);
   flash(lines.length ? `${what} — ${lines.length} raider${lines.length === 1 ? '' : 's'} updated` : what);
   return true;
 }
+// Redrawing the Roster page closes dropdowns; reopen the raider being edited
+function _reopenRosterRow(name) {
+  if (groupingMode !== 'roster') return;
+  const td = [...document.querySelectorAll('#rosterPanel td.player-name')].find(t => t.getAttribute('onclick')?.includes(`'${jsAttr(name)}'`));
+  if (td) { td.click(); requestAnimationFrame(() => document.getElementById('rdAv_' + normalizeName(name))?.focus()); }
+}
 function _rdEntry(key) { return unrecognizedNames().find(e => e.key === key); }
-function _aliasTypeFor(e) { return Object.keys(e.seen).length === 1 && e.seen.softres ? 'softres' : 'name'; }
-function _addAlias(p, type, value, source) {
-  p.aliases ||= [];
-  const nv = type === 'discord' ? String(value).trim() : normalizeName(baseName(value));
-  if (p.aliases.some(a => a.type === type && (type === 'discord' ? a.value === nv : normalizeName(baseName(a.value)) === nv))) return;
-  p.aliases.push({ type, value: String(value).trim(), addedAt: new Date().toISOString(), source });
+function _addAlias(p, value) {
+  const v = String(value).trim();
+  p.aliases = (p.aliases || []).map(aliasValue).filter(Boolean);
+  const same = a => isDiscordId(v) ? a === v : normalizeName(baseName(a)) === normalizeName(baseName(v));
+  if (!p.aliases.some(same)) p.aliases.push(v);
 }
 
 async function rdAssign(nameKey, playerKey) {
@@ -6527,7 +6521,7 @@ async function rdAssign(nameKey, playerKey) {
   playerKey ||= document.getElementById('rdAcIn_' + nameKey)?.dataset.value;
   if (!playerKey || !rosterPlayer(playerKey)) { flash('Pick a raider from the list first.', 'error'); return; }
   const who = rosterPlayer(playerKey).name;
-  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), _aliasTypeFor(e), e.name, Object.keys(e.seen).join(',')), `“${e.name}” is now an alias of ${who}`);
+  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), e.name), `“${e.name}” is now an AKA of ${who}`);
 }
 async function rdCreate(nameKey) {
   const e = _rdEntry(nameKey); if (!e) return;
@@ -6537,7 +6531,7 @@ async function rdCreate(nameKey) {
   if (rosterPlayer(normalizeName(name))) { flash(`${name} is already a raider — assign the name to them instead.`, 'error'); return; }
   const ok = await _rdCommit(() => {
     const p = { name, role, class: cls, isAlt, addedAt: todayMST(), aliases: [] };
-    if (normalizeName(baseName(e.name)) !== normalizeName(name)) _addAlias(p, _aliasTypeFor(e), e.name, Object.keys(e.seen).join(','));
+    if (normalizeName(baseName(e.name)) !== normalizeName(name)) _addAlias(p, e.name);
     rosterData.players.push(p);
   }, `Added raider ${name}`);
   if (ok) _rd.creating = '';
@@ -6554,27 +6548,20 @@ async function rdUnignore(i) {
 }
 async function rdAddAlias(playerKey) {
   const p = rosterPlayer(playerKey); if (!p) return;
-  const type = document.getElementById('rdAt_' + playerKey)?.value || 'name';
   const value = document.getElementById('rdAv_' + playerKey)?.value.trim();
   if (!value) return;
-  if (type === 'discord' && !/^\d{15,22}$/.test(value)) { flash('A Discord ID is a long number (right-click the user in Discord → Copy User ID).', 'error'); return; }
-  const owner = type !== 'discord' && rosterPlayer(normalizeName(baseName(value)));
-  if (owner && owner !== p) { flash(`${value} is another raider's name.`, 'error'); return; }
-  const taken = rosterData.players.find(o => o !== p && (o.aliases || []).some(a => a.type === type && normalizeName(baseName(a.value)) === normalizeName(baseName(value))));
-  if (taken) { flash(`${value} is already an alias of ${taken.name}.`, 'error'); return; }
-  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), type, value, 'manual'), `Added alias “${value}” to ${p.name}`);
+  if (!isDiscordId(value)) {
+    const owner = rosterPlayer(normalizeName(baseName(value)));
+    if (owner && owner !== p) { flash(`${value} is another raider's name.`, 'error'); return; }
+  }
+  const nv = isDiscordId(value) ? value : normalizeName(baseName(value));
+  const taken = rosterData.players.find(o => o !== p && (o.aliases || []).map(aliasValue).some(a => (isDiscordId(a) ? a : normalizeName(baseName(a))) === nv));
+  if (taken) { flash(`${value} is already an AKA of ${taken.name}.`, 'error'); return; }
+  await _rdCommit(() => _addAlias(rosterPlayer(playerKey), value), `${p.name} is also known as “${value}”`, p.name);
 }
 async function rdRemoveAlias(playerKey, i) {
-  const p = rosterPlayer(playerKey), a = p?.aliases?.[i]; if (!a) return;
-  await _rdCommit(() => rosterPlayer(playerKey).aliases.splice(i, 1), `Removed alias “${a.value}” from ${p.name}`);
-}
-async function rdSavePlayer(playerKey) {
-  const p = rosterPlayer(playerKey); if (!p) return;
-  const role = document.getElementById('rdRole_' + playerKey)?.value, cls = document.getElementById('rdClass_' + playerKey)?.value;
-  Object.assign(p, { role, class: cls, isAlt: !!document.getElementById('rdAlt_' + playerKey)?.checked });
-  rebuildClassMap();
-  await saveRosterToGitHub();
-  refreshAll();
+  const p = rosterPlayer(playerKey), v = aliasValue(p?.aliases?.[i]); if (!v) return;
+  await _rdCommit(() => rosterPlayer(playerKey).aliases.splice(i, 1), `Removed “${v}” from ${p.name}`, p.name);
 }
 
 
