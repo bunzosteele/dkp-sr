@@ -1435,7 +1435,8 @@
   .status-badge.past { color: var(--text-dim); border-color: var(--border); }
   .over-banner { margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(201,76,76,0.6); background: rgba(201,76,76,0.12); border-radius: 4px; color: #f0b0b0; font-size: 16px; }
   .warn-banner { margin-top: 10px; padding: 8px 12px; border: 1px solid rgba(224,160,96,0.4); background: rgba(224,160,96,0.07); border-radius: 4px; color: #e8c09a; font-size: 15px; }
-  .sub-tabs { display: flex; gap: 2px; margin-top: 14px; }
+  .sub-tabs { display: flex; gap: 2px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; }
+  .sub-tab { flex: 0 0 auto; }
   .sub-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-dim); font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; padding: 10px 16px; cursor: pointer; }
   .sub-tab:hover { color: var(--gold-light); }
   .sub-tab.on { color: var(--gold-light); border-bottom-color: var(--gold); }
@@ -1778,6 +1779,43 @@
 .end-bar-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .chk-off { opacity: 0.5; cursor: default; }
 
+.planned-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.planned-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 16px; }
+.planned-row.past { opacity: 0.75; }
+.planned-when { color: var(--text-dim); min-width: 150px; }
+.planned-title { color: var(--text); font-weight: 600; }
+.planned-actions { margin-left: auto; display: flex; gap: 8px; }
+.wcl-tag { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase; }
+.cons-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; justify-content: space-between; margin: 4px 0 6px; font-size: 16px; }
+.cons-note { font-size: 15px; margin-bottom: 10px; }
+.cons-table td { vertical-align: top; }
+.cons-table .cons-sub { font-size: 14px; }
+.cons-score { text-align: center; white-space: nowrap; }
+.cons-pct { font-family: 'Cinzel', serif; font-size: 16px; }
+.cons-pct.ok, .cons-grp.ok { color: #4caa6e; } .cons-pct.mid, .cons-grp.mid { color: #e0b040; } .cons-pct.low, .cons-grp.low { color: #e06050; }
+.cons-grp { display: inline-block; margin: 0 10px 3px 0; font-size: 15px; white-space: nowrap; }
+.cons-det { min-width: 260px; }
+.cons-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; margin: 0 4px 4px 0; font-size: 15px; color: var(--text-dim); }
+.cons-chip b { color: var(--text); font-weight: 600; }
+.cons-chip.req { border-color: rgba(92,200,224,0.55); color: var(--text); }
+.cons-unknown td { opacity: 0.75; }
+.cons-src { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.cons-src .gl-input { flex: 1 1 320px; min-width: 0; }
+.cr-combo { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: rgba(255,255,255,0.015); }
+.cr-combo > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 9px 12px; font-size: 16px; }
+.cr-combo > summary::-webkit-details-marker { display: none; }
+.cr-combo[open] > summary .rh-arrow { transform: rotate(90deg); display: inline-block; }
+.cr-sum { color: var(--text-dim); font-size: 15px; flex: 1 1 200px; }
+.cr-n { font-size: 15px; }
+.cr-body { padding: 0 12px 12px; }
+.cr-group { border-left: 3px solid rgba(92,200,224,0.45); padding: 6px 10px; margin: 8px 0; background: rgba(92,200,224,0.04); border-radius: 0 4px 4px 0; }
+.cr-ghead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.cr-gname { flex: 0 1 260px; min-width: 0; }
+.cr-ghead .x-btn { margin-left: auto; }
+.cr-chips { margin-bottom: 6px; }
+.cr-add, .cr-copy { max-width: 100%; }
+.cr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
 <script src="https://wow.zamimg.com/widgets/power.js"></script>
@@ -1811,6 +1849,7 @@
           <button class="group-btn" data-mode="roster" onclick="navDropdownSelect('navDdGuildMgmt','roster')">Roster</button>
           <button class="group-btn" data-mode="glossary" onclick="navDropdownSelect('navDdGuildMgmt','glossary')">Item Glossary</button>
           <button class="group-btn" data-mode="rules" onclick="navDropdownSelect('navDdGuildMgmt','rules')">SR Rules</button>
+          <button class="group-btn" data-mode="consumes" onclick="navDropdownSelect('navDdGuildMgmt','consumes')">Consumable Rules</button>
         </div>
       </div>
     </div>
@@ -1822,13 +1861,13 @@
     </div>
   </div>
 
-  <textarea id="claPersist" style="display:none;"></textarea>
 
   <div id="raidsPanel" style="display:none;padding:8px 0;"></div>
   <div id="itemsPanel" style="display:none;padding:8px 0;"></div>
   <div id="rosterPanel" style="display:none;padding:8px 0;"></div>
   <div id="glossaryPanel" style="display:none;padding:8px 0;"></div>
   <div id="rulesPanel" style="display:none;padding:8px 0;"></div>
+  <div id="consumesPanel" style="display:none;padding:8px 0;"></div>
 
   <div class="divider"></div>
   <div id="output">
@@ -1840,8 +1879,6 @@
 
   <div class="divider"></div>
 
-  <!-- WCL connect section intentionally removed for the initial WoW Forever release.
-       The integration code is preserved (not executed) in <script id="wcl-integration-disabled">. -->
 
   <div id="githubAuthFooter" style="margin-top:0;padding:20px 0;display:none;">
     <div style="font-family:'Cinzel',serif;font-size:15px;letter-spacing:0.15em;color:var(--gold);margin-bottom:8px;">Read-Only Mode</div>
@@ -1872,11 +1909,11 @@
 //   wf/roster.json     raiders (+ manual SR adjustments)
 //   wf/glossary.json   raids → bosses → item keys, and item metadata
 //   wf/sr-rules.json   SR earning rules (edited on the SR Rules page)
-//   wf/cla-sheets.json CLA sheet references + parsed cache (label = raid date)
+//   wf/consume-rules.json consumable requirements per class + role (Consumable Rules page)
 //
 // Nothing is stored about SR balances or bad-luck counters: both are recomputed
 // from raids + rules on every load (see computeSrLedger / computeBlp).
-// WarcraftLogs is preserved but disabled — see <script id="wcl-integration-disabled">.
+// Attendance and consumables come from Warcraft Logs (js_wcl.js / js_ui_consumes.js).
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ── Config (config.json overrides; SR rules live in KV, not here) ──
@@ -1887,12 +1924,9 @@ let GUILD_NAME = 'WoW Forever';
 let GUILD_SUBTITLE = 'Soft Reserve Summary';
 let PAGE_TITLE = 'WF Loot';
 let WOWHEAD_BRANCH = 'classic';
-let ENABLE_WCL = false;
-let ENABLE_APPS_SCRIPT = true;
-let APPS_SCRIPT = '';
 let CORS_API_KEY = '';
-let RH_SERVER_ID = '';
-let DEMO_ANNOUNCE_CHANNEL = '';  // demo raids announce here (a test channel) instead of a real sign-up channel          // Discord server ID (Raid-Helper server API, via the Worker)
+let RH_SERVER_ID = '';           // Discord server ID (Raid-Helper server API, via the Worker)
+let DEMO_ANNOUNCE_CHANNEL = '';  // demo raids announce here (a test channel) instead of a real sign-up channel
 let writeToken = localStorage.getItem('writeToken') || '';
 
 // ── Data ────────────────────────────────────────────────────────
@@ -1909,18 +1943,8 @@ const DEFAULT_SR_RULES = {
 };
 let srRules = JSON.parse(JSON.stringify(DEFAULT_SR_RULES));
 
-// CLA state (populated by the CLA pipeline copied from the LC dashboard)
-let claSheets = [];
-let _claStoredParsed = {};
-let _claNewlyParsed = 0;
-let _claFailedLabels = new Set();
-let claDataByPlayer = {};
-let claPlayersByLabel = {};
-let canonicalNames = {};
-let buffScoreByPlayerDate = {};
-let latestGearIssuesByPlayer = {};
+// Current gear per raider (from the newest Warcraft Logs report; see rebuildGearListing)
 let gearListingByPlayer = {};
-let claSheetDates = {};
 let classMap = {};
 let itemIcons = {};
 
@@ -1935,7 +1959,6 @@ const ROLE_CLASSES = {
 const roleSortState = {};
 let lastRenderData = { roles: [], dates: [] };
 let groupingMode = 'role';
-let wclData = {}; // referenced by copied CLA code only
 
 
 // ── [from LC dashboard] name/escape helpers ─────────────────────────────────────────
@@ -2150,41 +2173,7 @@ function rebuildClassMap() {
 }
 
 
-// ── [from LC dashboard] CLA cache save ──────────────────────────────────────────────
-let _githubSaveTimer = null;
-async function saveClaSheetsToGitHub() {
-  if (!writeToken) return false;
-  // Debounce: cancel pending save and wait 600ms to batch rapid calls
-  if (_githubSaveTimer) clearTimeout(_githubSaveTimer);
-  await new Promise(resolve => { _githubSaveTimer = setTimeout(resolve, 600); });
-  _githubSaveTimer = null;
-  try {
-    const _wbase = (u => u.startsWith('http') ? u : 'https://' + u)(CF_WORKER_URL.trim().replace(/\/+$/, ''));
-    const claPayload = { sheets: claSheets, parsed: _claStoredParsed };
-    const res = await fetch(`${_wbase}/${_kvKey('cla-sheets.json')}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Token': writeToken },
-      body: JSON.stringify(claPayload, null, 2),
-    });
-    if (res.ok) {
-      setHint('✓ Saved!', 'success');
-      return true;
-    } else {
-      // NOTE: this referenced an undefined `putRes`, so every failed save threw a
-      // ReferenceError here and reported that instead of the actual HTTP failure.
-      let detail = res.status + '';
-      try { detail = (await res.json()).message || detail; } catch(_) {}
-      setHint(`GitHub save failed: ${detail}`, 'error');
-      return false;
-    }
-  } catch(e) {
-    setHint(`GitHub save error: ${e.message}`, 'error');
-    return false;
-  }
-}
-
-
-// ── [from LC dashboard] Apps Script / CORS proxy / errors / status ──────────────────
+// ── [from LC dashboard] CORS proxy / errors / status ────────────────────────────────
 
 // Route CORS-blocked fetches through our own Cloudflare Worker's /proxy endpoint.
 //
@@ -2239,50 +2228,6 @@ function resetProxyBreaker() {
   _corsProxy429s = 0;
 }
 
-async function appsScriptFetch(url, _retry = 0) {
-  if (_corsProxyTripped) {
-    throw new Error('Apps Script fetch skipped — the CORS proxy returned ' + _corsProxyTripped +
-      ' and further requests were halted for this load');
-  }
-  // Apps Script redirects through script.googleusercontent.com, which sends no CORS
-  // headers; the proxy follows that redirect and adds them.
-  const proxy = corsProxyUrl(url);
-  const res = await fetch(proxy);
-
-  if (res.status === 401) {
-    // Credentials rejected — applies to every request, so retrying can never help.
-    _corsProxyTripped = 401;
-    throw new Error('Apps Script fetch failed: 401');
-  }
-
-  if (res.status === 403) {
-    // With the Worker proxy, 403 means "this target host isn't on the allowlist" —
-    // that is specific to ONE url, not a global failure, so it must NOT trip the
-    // breaker or a single mistyped sheet URL would abort the entire load.
-    let detail = '';
-    try { detail = (await res.clone().json()).error || ''; } catch(_) {}
-    throw new Error('Apps Script fetch failed: 403' + (detail ? ' — ' + detail : ''));
-  }
-
-  if (res.status === 429) {
-    if (++_corsProxy429s >= CORS_429_LIMIT) {
-      _corsProxyTripped = 429;
-      throw new Error('Apps Script fetch failed: 429 (rate limit — halting further requests)');
-    }
-    if (_retry < 1) {
-      // One gentle retry only. Aggressive retries multiply request volume against
-      // the very limit we already exceeded.
-      const retryAfterSec = parseFloat(res.headers.get('Retry-After'));
-      const delayMs = !isNaN(retryAfterSec) ? retryAfterSec * 1000 : 1500 + Math.random() * 500;
-      await new Promise(r => setTimeout(r, delayMs));
-      return appsScriptFetch(url, _retry + 1);
-    }
-  }
-
-  if (!res.ok) throw new Error('Apps Script fetch failed: ' + res.status);
-  return res.text();
-}
-
 // Run `items` through `worker` with at most `limit` in flight at once.
 // Used to keep corsproxy.io request bursts under its (low) free-tier rate limit
 // instead of firing every CLA sheet's requests simultaneously.
@@ -2295,14 +2240,6 @@ async function runWithConcurrency(items, limit, worker) {
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
-}
-
-async function fetchSheet(sheetId, gid) {
-  if (!APPS_SCRIPT) throw new Error('Apps Script URL not configured — set apps_script in config.json to fetch sheets by URL');
-  const rawUrl = APPS_SCRIPT + '?sheetId=' + sheetId + '&gid=' + gid;
-  const text = await appsScriptFetch(rawUrl);
-  if (!text.trim() || !text.includes(',')) throw new Error('Response does not look like CSV');
-  return text;
 }
 
 // Legacy proxy list kept for CLA sheets from other spreadsheets
@@ -2416,33 +2353,7 @@ function pctClass(pct) {
 function attPctColor(pct) { return pct === null ? '' : pctColor(pct); }
 
 
-// ── [from LC dashboard] auth + CLA sheet storage helpers ────────────────────────────
-function saveClaSheets() {
-  try { sessionStorage.setItem(STORAGE_NS + 'claSheets', JSON.stringify(claSheets)); } catch(e) {}
-  // Also persist in a hidden field so it survives even without sessionStorage
-  const el = document.getElementById('claPersist');
-  if (el) el.value = JSON.stringify(claSheets);
-}
-
-function loadClaSheets() {
-  // Try sessionStorage first, then hidden field
-  try {
-    const ss = sessionStorage.getItem(STORAGE_NS + 'claSheets');
-    if (ss) return JSON.parse(ss);
-  } catch(e) {}
-  try {
-    const el = document.getElementById('claPersist');
-    if (el && el.value) return JSON.parse(el.value);
-  } catch(e) {}
-  return [];
-}
-
-function extractSheetId(url) {
-  const m = url.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : null;
-}
-
-
+// ── [from LC dashboard] auth (write token) ──────────────────────────────────────────
 async function saveGithubToken() {
   const token = document.getElementById('claToken')?.value.trim();
   if (!token) return;
@@ -2490,50 +2401,6 @@ async function saveGithubToken() {
   updateAuthState();
 }
 
-function exportCla() {
-  if (!claSheets.length) {
-    setHint('No CLA sheets to export.', 'error'); return;
-  }
-  const data = JSON.stringify(claSheets, null, 2);
-  // Download as cla-sheets.json for easy repo upload
-  const blob = new Blob([data], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'cla-sheets.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  // Also copy to clipboard
-  navigator.clipboard.writeText(data).catch(() => {});
-  setHint('Downloaded cla-sheets.json — upload to your GitHub repo!', 'success');
-}
-
-function showImport() {
-  const area = document.getElementById('claImportArea');
-  area.style.display = area.style.display === 'none' ? 'block' : 'none';
-}
-
-function importCla() {
-  const text = document.getElementById('claImportText').value.trim();
-  try {
-    const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) throw new Error('Not an array');
-    claSheets = parsed;
-    saveClaSheets();
-    renderClaList();
-    document.getElementById('claImportArea').style.display = 'none';
-    document.getElementById('claImportText').value = '';
-    setHint(`Imported ${claSheets.length} sheet(s)!`, 'success');
-  } catch(e) {
-    setHint('Invalid data — make sure you pasted the full export text.', 'error');
-  }
-}
-
-function setHint(msg, type) {
-  // The CLA page is gone; hints go to the status line.
-  if (msg) setStatus(msg, type === 'error' ? 'error' : 'success');
-}
-
 function clearGithubToken() {
   writeToken = '';
   try { localStorage.removeItem('writeToken'); } catch(e) {}
@@ -2557,744 +2424,7 @@ function updateAuthState() {
 // Keep old name as alias for renderClaList calls
 function updateTokenStatus() { updateAuthState(); }
 
-function renderClaList() {
-  const list = document.getElementById('claList');
-  if (!list) { updateAuthState(); return; } // no CLA page in the raid-centric layout
-  const count = document.getElementById('claCount');
-  if (count) count.textContent = claSheets.length + ' sheet' + (claSheets.length !== 1 ? 's' : '');
-  updateAuthState();
-  if (!claSheets.length) {
-    list.innerHTML = '<div style="color:var(--text-dim);font-size:15px;font-style:italic;padding:4px 0 10px;">No CLA sheets added yet.</div>';
-    return;
-  }
-  list.innerHTML = claSheets.map((s, i) => `
-    <div class="cla-row">
-      <span class="cla-row-label">${s.label}</span>
-      <span class="cla-row-url" title="${s.url || ''}">${s.url ? s.url.substring(0, 60) + '...' : '(pasted CSV)'}</span>
-      <span class="cla-row-gids">${s.sheetId
-        ? `Issues: ${s.gearGid} / Gear: ${s.gearListingGid || '—'} / Consumes: ${s.buffGid}`
-        : `Paste mode${s.csvGearListing ? ' (with gear listing)' : ''}`}</span>
-      <button class="cla-remove" class="write-gated" onclick="removeCla(${i})" title="Remove">✕</button>
-    </div>
-  `).join('');
-}
-
 // Gear listing slot columns (matches CSV header row)
-
-
-// ── [from LC dashboard] CLA gear listing parser ─────────────────────────────────────
-// Gear listing slot columns (matches CSV header row)
-const GEAR_LISTING_SLOTS = ['Head','Neck','Shoulders','Cloak','Chest','Bracers','Hands','Waist','Legs','Feet','Ring1','Ring2','Trinket1','Trinket2','Weapon','Off-Hand','Wand/Idol/Relic etc.'];
-
-// Parse gear listing CSV -> { playerName: { Head: 'itemname', Neck: 'itemname', ... } }
-function parseGearListing(csvText) {
-  const rows = csvText.split('\n').map(r => {
-    const cols = [];
-    let cur = '', inQ = false;
-    for (const ch of r) {
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else cur += ch;
-    }
-    cols.push(cur.trim());
-    return cols;
-  });
-  // Find header row (contains 'Head')
-  const headerIdx = rows.findIndex(r => r.some(c => c === 'Head'));
-  if (headerIdx === -1) return {};
-  const slotCols = rows[headerIdx]; // col 0=empty, col 1=empty, col 2=Head, ...
-  const result = {};
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const row = rows[i];
-    const name = row[1]?.trim();
-    if (!name) continue;
-    const gear = {};
-    for (let s = 0; s < GEAR_LISTING_SLOTS.length; s++) {
-      const itemName = row[s + 2]?.trim();
-      if (itemName) gear[GEAR_LISTING_SLOTS[s]] = itemName;
-    }
-    result[name] = gear;
-  }
-  return result;
-}
-
-// Look up a single item name via Apps Script -> Wowhead search XML
-
-
-// ── [from LC dashboard] CLA fetch / parse / cache ───────────────────────────────────
-function removeCla(i) {
-  const removed = claSheets[i];
-  claSheets.splice(i, 1);
-  // Drop its cache entry too. _applyClaStoredParsed walks every label in the cache,
-  // including ones no longer in claSheets, so an orphan entry would keep injecting a
-  // deleted raid's attendance, gear issues and buff scores into memory on every load.
-  if (removed && _claStoredParsed[removed.label]) {
-    delete _claStoredParsed[removed.label];
-    _claFailedLabels.delete(removed.label);
-  }
-  saveClaSheets();
-  renderClaList();
-  saveClaSheetsToGitHub();
-}
-
-
-// Apply stored parsed CLA data to in-memory globals
-function _applyClaStoredParsed() {
-  // Process in sheet order (chronological) so newer entries correctly overwrite older ones
-  const _sortedLabels = claSheets.map(s => s.label).filter(l => _claStoredParsed[l]);
-  const _remainingLabels = Object.keys(_claStoredParsed).filter(l => !_sortedLabels.includes(l));
-  const _allLabels = [..._sortedLabels, ..._remainingLabels];
-
-  // Pre-populate ALL sheet dates before any recency comparisons so they're available
-  for (const label of _allLabels) {
-    const pd = _claStoredParsed[label];
-    if (pd?.sheetDate) claSheetDates[label] = pd.sheetDate instanceof Date ? pd.sheetDate : new Date(pd.sheetDate);
-  }
-
-  for (const label of _allLabels) {
-    const pd = _claStoredParsed[label];
-    if (!pd) continue;
-
-    // claPresence
-    if (pd.claPresence) {
-      if (!claPlayersByLabel[label]) claPlayersByLabel[label] = new Set();
-      for (const key of (pd.claPresence || [])) {
-        claPlayersByLabel[label].add(key);
-        if (!canonicalNames[key]) {
-          const sheet = claSheets.find(s => s.label === label);
-          // canonical name stored separately
-        }
-      }
-    }
-
-    // canonicalNames
-    if (pd.canonicalNames) {
-      for (const [k, v] of Object.entries(pd.canonicalNames)) canonicalNames[k] = v;
-    }
-
-    // gearIssues
-    if (pd.gearIssues) {
-      for (const [key, data] of Object.entries(pd.gearIssues)) {
-        if (!claDataByPlayer[key]) claDataByPlayer[key] = { gearIssues: [], buffConsumables: [] };
-        claDataByPlayer[key].gearIssues.push(data);
-        // Apply recency logic for latestGearIssuesByPlayer
-        const existingLabel = latestGearIssuesByPlayer[key]?.label;
-        const existingDate = existingLabel ? (claSheetDates[existingLabel] || null) : null;
-        // Use the NORMALISED date, not pd.sheetDate. After a JSON round-trip through KV
-        // pd.sheetDate is an ISO string while claSheetDates holds Date objects, and
-        // `string >= Date` compares "2026-03-13T12:.." against "Fri Mar 13 2026 .."
-        // lexicographically — always false. That made every recency check fail, so the
-        // FIRST label processed won and "latest" silently resolved to the OLDEST raid.
-        const thisDate = claSheetDates[label] || null;
-        let isNewer;
-        if (thisDate && existingDate) { isNewer = thisDate >= existingDate; }
-        else {
-          const si = claSheets.findIndex(s => s.label === label);
-          const ei = existingLabel ? claSheets.findIndex(s => s.label === existingLabel) : -1;
-          isNewer = si >= ei;
-        }
-        if (isNewer) latestGearIssuesByPlayer[key] = { label, issues: data.issues };
-      }
-    }
-
-    // latestIssues — the CLEAN-PLAYER case.
-    //
-    // pd.gearIssues only contains players who HAD issues (parseGearIssues pushes only
-    // `if (issues.length)`), so it structurally cannot express "showed up in this CLA
-    // with nothing wrong". Rebuilding "latest" from gearIssues alone therefore leaves a
-    // player who fixed their gear pinned to the last raid where they had problems, and
-    // the ⚠ flag never clears. pd.latestIssues DOES carry those empty entries — it was
-    // being written to KV and never read back. Apply it under the same recency rule.
-    if (pd.latestIssues) {
-      for (const [key, data] of Object.entries(pd.latestIssues)) {
-        if (!claDataByPlayer[key]) claDataByPlayer[key] = { gearIssues: [], buffConsumables: [] };
-        const existingLabel = latestGearIssuesByPlayer[key]?.label;
-        const existingDate = existingLabel ? (claSheetDates[existingLabel] || null) : null;
-        const thisDate = claSheetDates[label] || null;
-        let isNewer;
-        if (thisDate && existingDate) { isNewer = thisDate >= existingDate; }
-        else {
-          const si = claSheets.findIndex(s => s.label === label);
-          const ei = existingLabel ? claSheets.findIndex(s => s.label === existingLabel) : -1;
-          isNewer = si >= ei;
-        }
-        if (isNewer) latestGearIssuesByPlayer[key] = { label, issues: data.issues || [] };
-      }
-    }
-
-    // buffScores
-    if (pd.buffScores) {
-      for (const [key, scores] of Object.entries(pd.buffScores)) {
-        if (!claDataByPlayer[key]) claDataByPlayer[key] = { gearIssues: [], buffConsumables: [] };
-        for (const [dateStr, score] of Object.entries(scores)) {
-          if (!buffScoreByPlayerDate[key]) buffScoreByPlayerDate[key] = {};
-          buffScoreByPlayerDate[key][dateStr] = score;
-        }
-      }
-    }
-
-    // gearListing — only apply if this sheet had entries (skip empty/older sheets)
-    console.log(`[apply] label="${label}" stored gearListing players: ${Object.keys(pd.gearListing||{}).length}`);
-    if (pd.gearListing && Object.keys(pd.gearListing).length > 0) {
-      for (const [key, slots] of Object.entries(pd.gearListing)) {
-        const existingLabel = gearListingByPlayer[key]?.label;
-        const existingDate = existingLabel ? (claSheetDates[existingLabel] || null) : null;
-        // Use the NORMALISED date, not pd.sheetDate. After a JSON round-trip through KV
-        // pd.sheetDate is an ISO string while claSheetDates holds Date objects, and
-        // `string >= Date` compares "2026-03-13T12:.." against "Fri Mar 13 2026 .."
-        // lexicographically — always false. That made every recency check fail, so the
-        // FIRST label processed won and "latest" silently resolved to the OLDEST raid.
-        const thisDate = claSheetDates[label] || null;
-        let isNewer;
-        if (thisDate && existingDate) { isNewer = thisDate >= existingDate; }
-        else {
-          const si = claSheets.findIndex(s => s.label === label);
-          const ei = existingLabel ? claSheets.findIndex(s => s.label === existingLabel) : -1;
-          isNewer = si >= ei;
-        }
-        if (isNewer) gearListingByPlayer[key] = { label, slots };
-      }
-    }
-  } // end for loop
-  console.log('CLA cache applied:', Object.keys(claDataByPlayer).length, 'players,',
-    Object.keys(gearListingByPlayer).length, 'gear listings,',
-    Object.keys(buffScoreByPlayerDate).length, 'buff score players');
-}
-
-// Re-fetch all CLA sheets, re-parse, store in _claStoredParsed, and save
-async function reparseAllClaData() {
-  const btn = document.getElementById('claReparseBtn');
-  if (btn) { btn.textContent = 'Re-parsing…'; btn.disabled = true; }
-  const backup = _claStoredParsed;
-  try {
-    // Force full re-fetch by temporarily clearing cache
-    _claStoredParsed = {};
-    _corsProxyTripped = null;
-    _corsProxy429s = 0;
-    await fetchAllClaData();
-    // Store parsed results back into _claStoredParsed
-    _storeParsedClaData();
-    // Don't overwrite a good cache with a partial one. If sheets failed, keep what we had.
-    if (_claFailedLabels.size) {
-      const failed = _claFailedLabels.size;
-      _claStoredParsed = backup;
-      if (btn) { btn.textContent = 'Re-parse CLAs'; btn.disabled = false; }
-      setHint(`Re-parse aborted — ${failed} sheet(s) failed to fetch` +
-        (_corsProxyTripped ? ` (the CORS proxy returned ${_corsProxyTripped})` : '') +
-        '. The existing cache was left untouched.', 'error');
-      return;
-    }
-    await saveClaSheetsToGitHub();
-    if (btn) { btn.textContent = '✓ Done'; setTimeout(() => { btn.textContent = 'Re-parse CLAs'; btn.disabled = false; }, 2000); }
-    setHint('CLA data re-parsed and cached — future loads will be instant.', 'success');
-  } catch(e) {
-    _claStoredParsed = backup;
-    if (btn) { btn.textContent = 'Re-parse CLAs'; btn.disabled = false; }
-    setHint('Re-parse failed: ' + e.message, 'error');
-  }
-}
-
-// Snapshot current in-memory parsed state into _claStoredParsed
-// A cache entry is only worth keeping if it actually names players. An entry written from
-// a load whose fetches failed has empty presence/issues/listing and is worse than no entry
-// at all, because it stops the sheet ever being re-fetched.
-function _isUsableClaCacheEntry(e) {
-  if (!e || typeof e !== 'object') return false;
-  return (e.claPresence && e.claPresence.length > 0)
-      || (e.gearIssues && Object.keys(e.gearIssues).length > 0)
-      || (e.gearListing && Object.keys(e.gearListing).length > 0)
-      || (e.buffScores && Object.keys(e.buffScores).length > 0);
-}
-
-// ── KV cache warmer ─────────────────────────────────────────────
-// Fills the KV cache one sheet at a time, checkpointing progress as it goes, so a run
-// that dies partway can be resumed instead of restarted. With the Worker proxy there is
-// no rate limit to respect, so this is now a convenience (bank 29 sheets once, resumably)
-// rather than a necessity — a normal page load will warm the cache on its own.
-//
-//   warmClaCache()                       // fill in whatever isn't cached yet
-//   warmClaCache({ force: true })        // re-fetch every sheet from scratch
-//   warmClaCache({ reqPerMin: 15 })      // go slower (gentler on Apps Script)
-async function warmClaCache(opts = {}) {
-  const { force = false, reqPerMin = 60, saveEvery = 3 } = opts;
-
-  if (!writeToken) { console.error('warmClaCache: no write token saved — enter it in the dashboard first.'); return; }
-  if (!APPS_SCRIPT) { console.error('warmClaCache: apps_script is not configured in config.json.'); return; }
-  if (!CF_WORKER_URL && !CORS_API_KEY) console.warn('warmClaCache: no cf_worker_url set — requests have no proxy and will fail.');
-
-  const gap = Math.ceil(60000 / Math.max(1, reqPerMin));
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  // Start from a clean breaker; this is an explicit, deliberate attempt.
-  _corsProxyTripped = null;
-  _corsProxy429s = 0;
-  _claFailedLabels = new Set();
-
-  if (force) _claStoredParsed = {};
-  else for (const [label, e] of Object.entries(_claStoredParsed)) {
-    if (!_isUsableClaCacheEntry(e)) delete _claStoredParsed[label];
-  }
-
-  // Rebuild in-memory state from whatever is already cached, so recency comparisons
-  // against already-warmed sheets are correct as we add new ones.
-  claDataByPlayer = {}; claPlayersByLabel = {}; buffScoreByPlayerDate = {};
-  latestGearIssuesByPlayer = {}; gearListingByPlayer = {}; claSheetDates = {}; canonicalNames = {};
-  _applyClaStoredParsed();
-
-  // Oldest first, so each sheet we parse is newer than everything already in memory and
-  // the gear-listing recency rules resolve the same way a full load would.
-  const todo = claSheets
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => s.sheetId && !_claStoredParsed[s.label])
-    .sort((a, b) => a.i - b.i);
-
-  if (!todo.length) { console.log('warmClaCache: nothing to do — every sheet with a URL is already cached.'); return; }
-
-  const totalReqs = todo.reduce((n, { s }) => n + 2 + (s.gearListingGid ? 1 : 0), 0);
-  const etaMin = ((totalReqs * gap) / 60000).toFixed(1);
-  console.log(`warmClaCache: ${todo.length} sheet(s), ~${totalReqs} requests at ${reqPerMin}/min — about ${etaMin} min. Leave this tab open.`);
-
-  let done = 0, failed = 0, sinceSave = 0;
-
-  for (const { s: sheet, i: sheetIdx } of todo) {
-    if (_corsProxyTripped) {
-      console.error(`warmClaCache: halted — the CORS proxy returned ${_corsProxyTripped}. ` +
-        `${done} sheet(s) warmed and saved before stopping. Fix the proxy, then run warmClaCache() again to resume.`);
-      break;
-    }
-
-    const label = sheet.label;
-    let ok = true;
-    // One request at a time, spaced by `gap`. Sequential on purpose.
-    const pull = async (gid, what) => {
-      await sleep(gap);
-      try { return await fetchSheet(sheet.sheetId, gid); }
-      catch (e) { ok = false; console.warn(`  ✗ "${label}" ${what}: ${e.message}`); return null; }
-    };
-
-    const gearText = await pull(sheet.gearGid, 'gear issues');
-    if (gearText) {
-      try { parseGearIssues(gearText, label); }
-      catch (e) { ok = false; console.warn(`  ✗ "${label}" gear issues parse: ${e.message}`); }
-    }
-
-    const buffText = _corsProxyTripped ? null : await pull(sheet.buffGid, 'buff consumables');
-    if (buffText) {
-      try { parseBuffConsumables(buffText, label); }
-      catch (e) { ok = false; console.warn(`  ✗ "${label}" buff parse: ${e.message}`); }
-    }
-
-    if (sheet.gearListingGid && !_corsProxyTripped) {
-      const listText = await pull(sheet.gearListingGid, 'gear listing');
-      if (listText) {
-        // claSheetDates[label] is populated by parseGearIssues above, so recency is correct.
-        try {
-          const data = parseGearListing(listText);
-          const thisDate = claSheetDates[label] || null;
-          Object.entries(data).forEach(([playerName, slots]) => {
-            const key = normalizeName(playerName);
-            const existingLabel = gearListingByPlayer[key]?.label;
-            const existingDate = existingLabel ? (claSheetDates[existingLabel] || null) : null;
-            let isNewer;
-            if (thisDate && existingDate) isNewer = thisDate >= existingDate;
-            else {
-              const ei = existingLabel ? claSheets.findIndex(x => x.label === existingLabel) : -1;
-              isNewer = sheetIdx >= ei;
-            }
-            if (isNewer) gearListingByPlayer[key] = { label, slots };
-          });
-        } catch (e) { ok = false; console.warn(`  ✗ "${label}" gear listing parse: ${e.message}`); }
-      }
-    }
-
-    if (ok) { done++; sinceSave++; console.log(`  ✓ ${label}  (${done}/${todo.length})`); }
-    else { failed++; _claFailedLabels.add(label); console.warn(`  ⚠ ${label} incomplete — not cached, will retry on a later run.`); }
-
-    // Checkpoint. _storeParsedClaData skips failed labels, so a partial run still banks
-    // every sheet that fully succeeded rather than losing the work.
-    if (sinceSave >= saveEvery || _corsProxyTripped) {
-      _storeParsedClaData();
-      const saved = await saveClaSheetsToGitHub();
-      console.log(saved ? `  … checkpoint saved (${Object.keys(_claStoredParsed).length} sheets in cache)`
-                        : '  … checkpoint SAVE FAILED — see the error above');
-      sinceSave = 0;
-    }
-  }
-
-  _storeParsedClaData();
-  const saved = await saveClaSheetsToGitHub();
-  console.log(`warmClaCache: finished — ${done} warmed, ${failed} failed, ` +
-    `${Object.keys(_claStoredParsed).length} sheet(s) now cached in KV. Final save: ${saved ? 'ok' : 'FAILED'}.`);
-  if (failed || _corsProxyTripped) console.log('Run warmClaCache() again to retry the sheets that failed — cached ones are skipped.');
-  else console.log('Reload the page — it should now load without any corsproxy.io requests for CLA data.');
-}
-window.warmClaCache = warmClaCache;
-
-// Escape hatch: wipe the KV-persisted CLA cache and force a full re-fetch on next load.
-async function clearClaCache() {
-  _claStoredParsed = {};
-  _claFailedLabels = new Set();
-  await saveClaSheetsToGitHub();
-  console.log('CLA cache cleared in KV — reload the page to re-fetch every sheet.');
-}
-window.clearClaCache = clearClaCache;
-
-function _storeParsedClaData() {
-  const prev = _claStoredParsed;
-  _claStoredParsed = {};
-  for (const sheet of claSheets) {
-    const label = sheet.label;
-    // A sheet whose fetch or parse failed this load has NO usable in-memory data. Writing
-    // it into the cache would store an empty entry that every future load then treats as
-    // "already cached" and never re-fetches — permanently masking the real data. Keep the
-    // previous cached entry if we had one, otherwise leave the label uncached entirely.
-    if (_claFailedLabels.has(label)) {
-      if (prev[label]) _claStoredParsed[label] = prev[label];
-      continue;
-    }
-    const sheetDate = claSheetDates[label] || null;
-
-    // Gear issues per player for this label
-    const gearIssues = {};
-    for (const [key, data] of Object.entries(claDataByPlayer)) {
-      const entry = data.gearIssues.find(gi => gi.label === label);
-      if (entry) gearIssues[key] = entry;
-    }
-    // Also capture latestGearIssuesByPlayer for this label
-    const latestIssues = {};
-    for (const [key, data] of Object.entries(latestGearIssuesByPlayer)) {
-      if (data.label === label) latestIssues[key] = data;
-    }
-
-    // Buff scores per player for this label's date.
-    //
-    // buffScoreByPlayerDate is keyed by an ISO 'YYYY-MM-DD' STRING (parseBuffConsumables
-    // uses formatAttendanceDate), but claSheetDates[label] holds a Date OBJECT. Indexing
-    // the former with the latter coerces the Date via toString() —
-    // "Fri Feb 20 2026 12:00:00 GMT+0000" — which never matches, so this silently stored
-    // {} for every sheet. Harmless while the cache was broken; with the cache working, a
-    // fully-cached load would have had no consumable data and quietly wrong priority
-    // scores. Normalise to the same string key both sides use.
-    const sheetDateKey = sheetDate
-      ? (sheetDate instanceof Date ? formatAttendanceDate(sheetDate) : String(sheetDate))
-      : null;
-    const buffScores = {};
-    if (sheetDateKey) {
-      for (const [key, scores] of Object.entries(buffScoreByPlayerDate)) {
-        if (scores[sheetDateKey]) {
-          if (!buffScores[key]) buffScores[key] = {};
-          buffScores[key][sheetDateKey] = scores[sheetDateKey];
-        }
-      }
-    }
-
-    // Gear listing for this label
-    const gearListing = {};
-    for (const [key, data] of Object.entries(gearListingByPlayer)) {
-      if (data.label === label) gearListing[key] = data.slots;
-    }
-    console.log(`[store] label="${label}" gearListing players: ${Object.keys(gearListing).length} / gearListingByPlayer total: ${Object.keys(gearListingByPlayer).length}`);
-
-    // CLA presence
-    const claPresence = [...(claPlayersByLabel[label] || [])];
-
-    // Canonical names
-    const canonical = { ...canonicalNames };
-
-    const entry = {
-      sheetDate,
-      claPresence,
-      canonicalNames: canonical,
-      gearIssues,
-      latestIssues,
-      buffScores,
-      gearListing,
-    };
-    // Invariant: never store an entry with no players in it. A sheet that was never
-    // attempted this run (the warmer halted before reaching it, say) produces exactly
-    // that, and storing it would mark the sheet "cached" so nothing ever re-fetches it.
-    if (!_isUsableClaCacheEntry(entry)) {
-      if (prev[label]) _claStoredParsed[label] = prev[label];
-      continue;
-    }
-    _claStoredParsed[label] = entry;
-  }
-  console.log('Stored parsed CLA data for', Object.keys(_claStoredParsed).length, 'of',
-    claSheets.length, 'sheets' + (_claFailedLabels.size ? ` (${_claFailedLabels.size} skipped — failed this load)` : ''));
-}
-
-async function fetchAllClaData() {
-  claDataByPlayer = {};
-  claPlayersByLabel = {};
-  buffScoreByPlayerDate = {};
-  latestGearIssuesByPlayer = {};
-  gearListingByPlayer = {};
-  claSheetDates = {};
-  canonicalNames = {};
-  _claFailedLabels = new Set();
-
-  // Any sheet that loses a request or a parse is unusable for caching purposes.
-  const claFailed = (label, source, msg) => {
-    _claFailedLabels.add(label);
-    addError(source, msg);
-  };
-
-  // Partition by what work each sheet actually needs. Anything already parsed into
-  // _claStoredParsed (loaded from KV) needs no HTTP at all, so adding one new raid
-  // costs 3 requests instead of re-pulling every historical CLA from scratch.
-  // Self-healing guard: an entry with no players in it carries no information, so treating
-  // it as "cached" would permanently suppress the re-fetch that could repair it. Any such
-  // entry — however it got written — is discarded and the sheet re-fetched.
-  const purged = [];
-  for (const [label, e] of Object.entries(_claStoredParsed)) {
-    if (!_isUsableClaCacheEntry(e)) { delete _claStoredParsed[label]; purged.push(label); }
-  }
-  if (purged.length) console.warn('[fetchAllClaData] discarded', purged.length,
-    'empty cache entries (will re-fetch):', purged.join(', '));
-
-  const cachedSheets  = claSheets.filter(s => _claStoredParsed[s.label]);
-  const uncachedFetch = claSheets.filter(s => !_claStoredParsed[s.label] && s.sheetId);
-  const uncachedPaste = claSheets.filter(s => !_claStoredParsed[s.label] && (s.csvGear || s.csvBuff));
-  console.log('[fetchAllClaData] total:', claSheets.length, '| cached:', cachedSheets.length,
-    '| to fetch:', uncachedFetch.length, '| paste:', uncachedPaste.length);
-  _claNewlyParsed = uncachedFetch.length + uncachedPaste.length;
-
-  // Collect raw results first, then parse in recency order once all dates are known
-  const gearResults = [];        // { label, text }
-  const gearListingResults = []; // { label, text, sheetIdx }
-  // Parse uncached paste-mode entries immediately (no fetch needed)
-  uncachedPaste.forEach(sheet => {
-    const csvGear = normalizeClaPaste(sheet.csvGear || '');
-    const csvBuff = normalizeClaPaste(sheet.csvBuff || '');
-    const csvGearListing = sheet.csvGearListing ? normalizeClaPaste(sheet.csvGearListing) : '';
-    try { parseGearIssues(csvGear, sheet.label); }
-    catch(e) { claFailed(sheet.label, `CLA "${sheet.label}" — Gear Issues`, `Parse error: ${e.message}`); }
-    try { parseBuffConsumables(csvBuff, sheet.label); }
-    catch(e) { claFailed(sheet.label, `CLA "${sheet.label}" — Buff Consumables`, `Parse error: ${e.message}`); }
-    if (csvGearListing) {
-      // Push into gearListingResults so it goes through the same recency-ordered processing as URL sheets
-      gearListingResults.push({ label: sheet.label, text: csvGearListing, sheetIdx: claSheets.indexOf(sheet) });
-    }
-  });
-
-  // Fetch ONLY sheets we have no cached parse for, 4 sheets' worth of requests (up to 12
-  // concurrent HTTP calls) at a time. The Worker proxy has no rate limit, so this cap now
-  // exists to stay clear of Apps Script's own simultaneous-execution quota rather than a
-  // third party's — which is why it's 4 and not unbounded.
-  if (uncachedFetch.length) {
-    await runWithConcurrency(uncachedFetch, 4, async (sheet) => {
-      const sheetIdx = claSheets.indexOf(sheet);
-      await Promise.all([
-        fetchSheet(sheet.sheetId, sheet.gearGid)
-          .then(text => gearResults.push({ label: sheet.label, text }))
-          .catch(e => claFailed(sheet.label, `CLA "${sheet.label}" — Gear Issues (gid: ${sheet.gearGid})`, e.message)),
-        sheet.gearListingGid
-          ? fetchSheet(sheet.sheetId, sheet.gearListingGid)
-              .then(text => gearListingResults.push({ label: sheet.label, text, sheetIdx }))
-              .catch(e => claFailed(sheet.label, `CLA "${sheet.label}" — Gear Listing (gid: ${sheet.gearListingGid})`, e.message))
-          : Promise.resolve(),
-        fetchSheet(sheet.sheetId, sheet.buffGid)
-          .then(text => {
-            try { parseBuffConsumables(text, sheet.label); }
-            catch(e) { claFailed(sheet.label, `CLA "${sheet.label}" — Buff Consumables (gid: ${sheet.buffGid})`, `Parse error: ${e.message}`); }
-          })
-          .catch(e => claFailed(sheet.label, `CLA "${sheet.label}" — Buff Consumables (gid: ${sheet.buffGid})`, e.message)),
-      ]);
-    });
-  }
-
-  // Restore everything we already had parsed in KV. This pre-populates claSheetDates for
-  // every cached label and applies gear listings / latest issues under the same recency
-  // rules, so cached and freshly-fetched sheets interleave correctly whichever is newer.
-  if (cachedSheets.length) _applyClaStoredParsed();
-
-  // Now that claSheetDates is fully populated, parse gear issues and gear listings with correct recency
-  for (const { label, text } of gearResults) {
-    try { parseGearIssues(text, label); }
-    catch(e) { claFailed(label, `CLA "${label}" — Gear Issues`, `Parse error: ${e.message}`); }
-  }
-  // Sort by sheet index so newer CLAs correctly overwrite older ones
-  gearListingResults.sort((a, b) => a.sheetIdx - b.sheetIdx);
-  for (const { label, text, sheetIdx } of gearListingResults) {
-    try {
-      const data = parseGearListing(text);
-      const thisDate = claSheetDates[label] || null;
-      let count = 0;
-      Object.entries(data).forEach(([playerName, slots]) => {
-        const key = normalizeName(playerName);
-        const existingLabel = gearListingByPlayer[key]?.label;
-        const existingDate = existingLabel ? (claSheetDates[existingLabel] || null) : null;
-        let isNewer;
-        if (thisDate && existingDate) { isNewer = thisDate >= existingDate; }
-        else {
-          const ei = existingLabel ? claSheets.findIndex(s => s.label === existingLabel) : -1;
-          isNewer = sheetIdx >= ei;
-        }
-        if (isNewer) { gearListingByPlayer[key] = { label, slots }; count++; }
-      });
-      console.log(`Gear listing "${label}": ${Object.keys(data).length} players parsed, ${count} updated`);
-    } catch(e) { claFailed(label, `CLA "${label}" — Gear Listing`, `Parse error: ${e.message}`); console.warn('Gear listing parse error:', label, e); }
-  }
-  console.log(`gearListingByPlayer: ${Object.keys(gearListingByPlayer).length} players total`);
-}
-
-
-function parseGearIssues(text, label) {
-  const rows = parseCsvRows(text);
-  // Always flag: missing gem or enchant entirely
-  const ALWAYS_FLAGGED = /\[no (gem|enchant)|common gem/i;
-  // Suboptimal: wrong/cheap enchant — only flagged on top-5 BiS items
-  const SUBOPTIMAL = /\[(?!no )/i;
-
-  for (const row of rows) {
-    const player = row[4]?.trim();
-    if (!player) continue;
-
-    // Parse all issue cells, extracting item name and issue type
-    // Items to always exclude from gear issue checks regardless of enchant status
-    const EXCLUDED_ITEMS = /mark of the champion|meta gem/i;
-    const allIssues = row.slice(5)
-      .map(v => v.trim())
-      .filter(v => v && v !== '' && !v.startsWith('-') && !EXCLUDED_ITEMS.test(v) && !/ZG/i.test(v))
-      .map(v => {
-        const m = v.match(/^(.+?)\s*\[([^\]]+)\]$/);
-        return m ? { raw: v, itemName: m[1].trim(), issue: m[2].trim() } : null;
-      })
-      .filter(Boolean);
-      // (LC dashboard filtered to items on a TBC BiS list here — no BiS lists for WoW Forever.)
-
-    // Split into always-flagged and suboptimal
-    const egregious = allIssues.filter(i => ALWAYS_FLAGGED.test('[' + i.issue + ']'));
-    const suboptimal = allIssues.filter(i => !ALWAYS_FLAGGED.test('[' + i.issue + ']'));
-
-    // For suboptimal issues, only include if the item is top-5 BiS for this player
-    // We store suboptimal separately so we can evaluate against BiS data at render time
-    const issues = [
-      ...egregious.map(i => i.raw),
-    ];
-
-    const key = normalizeName(player);
-    if (!claDataByPlayer[key]) claDataByPlayer[key] = { gearIssues: [], buffConsumables: [] };
-    if (issues.length) claDataByPlayer[key].gearIssues.push({ label, issues });
-    // Always record presence regardless of whether they have any issues
-    if (!claPlayersByLabel[label]) claPlayersByLabel[label] = new Set();
-    claPlayersByLabel[label].add(key);
-    // Only overwrite if this sheet is more recent than what we have
-    // Use C3 date from buff tab if available, otherwise fall back to claSheets array order
-    const thisDate = claSheetDates[label] || null;
-    const existingLabel = latestGearIssuesByPlayer[key]?.label;
-    const existingDate = existingLabel ? (claSheetDates[existingLabel] || null) : null;
-    let isNewer;
-    if (thisDate && existingDate) {
-      isNewer = thisDate >= existingDate;
-    } else {
-      // Fall back to array index order
-      const sheetIdx = claSheets.findIndex(s => s.label === label);
-      const existingIdx = existingLabel ? claSheets.findIndex(s => s.label === existingLabel) : -1;
-      isNewer = sheetIdx >= existingIdx;
-    }
-    if (isNewer) {
-      latestGearIssuesByPlayer[key] = { label, issues };
-    }
-  }
-}
-
-function parseBuffConsumables(text, label) {
-  const rows = parseCsvRows(text);
-  // C3 (row index 2, col index 2) contains the raid date for this CLA
-  // Use the CLA label (e.g. "2/25", "3/4") as the raid date — it's set manually
-  // and is the actual raid date, unlike the CLA export date in the sheet which
-  // reflects when the export was generated (often the next day).
-  // Also try to get the year from the CLA date cell since labels don't include it.
-  const dateStr = rows[2]?.[2]?.trim();
-  let raidYear = new Date().getUTCFullYear(); // default to current year
-  if (dateStr) {
-    const yearMatch = dateStr.match(/(20\d{2})/);
-    if (yearMatch) raidYear = parseInt(yearMatch[1], 10);
-  }
-  // Parse label as M/D
-  const isoMatch = label.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) claSheetDates[label] = new Date(Date.UTC(+isoMatch[1], +isoMatch[2] - 1, +isoMatch[3], 12, 0, 0));
-  const labelMatch = label.match(/^(\d{1,2})\/(\d{1,2})$/);
-  if (labelMatch) {
-    const month = parseInt(labelMatch[1], 10) - 1; // 0-indexed
-    const day   = parseInt(labelMatch[2], 10);
-    claSheetDates[label] = new Date(Date.UTC(raidYear, month, day, 12, 0, 0));
-  }
-  // Header row is row index 4 (0-based), data starts at row 5
-  const headers = rows[4]?.slice(2) || []; // col C onwards
-  const normLabel = normalizeDate(label);
-  // Use ISO date as key if we have it, otherwise fall back to normLabel
-  const isoLabel = claSheetDates[label] ? formatAttendanceDate(claSheetDates[label]) : normLabel;
-  for (let i = 5; i < rows.length; i++) {
-    const row = rows[i];
-    const player = row[1]?.trim();
-    if (!player) continue;
-    const values = row.slice(2);
-    const cols = {};
-    headers.forEach((h, idx) => {
-      if (h.trim()) cols[h.trim()] = values[idx]?.trim() || '0%';
-    });
-    const key = normalizeName(player);
-    if (!claDataByPlayer[key]) claDataByPlayer[key] = { gearIssues: [], buffConsumables: [] };
-    // NOTE: buffConsumables is populated here but is NOT written to the KV cache by
-    // _storeParsedClaData, so it is always [] on a cached load. That is currently
-    // harmless because nothing renders it — the consumes column and the raid dots both
-    // read buffScoreByPlayerDate, which IS cached. If you ever display this, cache it
-    // too or it will silently be empty for every visitor who loads from KV.
-    claDataByPlayer[key].buffConsumables.push({ label, cols });
-    // Store exact name with special chars for WCL lookups
-    if (!canonicalNames[key]) canonicalNames[key] = player;
-
-    // Store total average + scrolls score keyed by normalized date for dot colouring
-    const totalAvg = values[0]?.trim() || '0%'; // col C = index 0 of slice(2) = total average
-    const scrollsVal = values[6]?.trim() || '0%'; // col I = index 6 of slice(2) = Scrolls
-    const pct = parseInt(totalAvg);
-    const scrollsPct = parseInt(scrollsVal);
-    if (!buffScoreByPlayerDate[key]) buffScoreByPlayerDate[key] = {};
-    const elixirVal  = parseInt(values[1]?.trim()) || 0;  // Elixir or Flask
-    const foodVal     = parseInt(values[5]?.trim()) || 0;  // Food Buff
-    const wepOilVal   = parseInt(values[7]?.trim()) || 0;  // Weapon Enhancement
-    buffScoreByPlayerDate[key][isoLabel] = {
-      total: isNaN(pct) ? null : pct,
-      scrolls: isNaN(scrollsPct) ? 0 : scrollsPct,
-      elixir: elixirVal,
-      food: foodVal,
-      wepOil: wepOilVal
-    };
-  }
-}
-
-
-// ── [from LC dashboard] CLA load from KV ────────────────────────────────────────────
-// Auto-load CLA sheets from repo JSON if no sheets saved locally
-async function loadClaSheetsFromRepo() {
-  try {
-    let data;
-    try { data = await fetchFromWorker('cla-sheets.json'); } catch(e) { return; }
-    // Support both old format (array) and new format ({ sheets, parsed })
-    const sheets = Array.isArray(data) ? data : (data?.sheets || []);
-    const parsed = Array.isArray(data) ? null : (data?.parsed || null);
-    if (!sheets.length) return;
-    if (!claSheets.length) {
-      claSheets = sheets;
-      saveClaSheets();
-      renderClaList();
-      updateAuthState();
-    }
-    // Adopt the parsed cache regardless of where claSheets came from.
-    //
-    // claSheets is restored from sessionStorage, so on any refresh within the same tab
-    // the branch above is skipped — and _claStoredParsed lives ONLY in KV, never in
-    // sessionStorage. Loading it inside that branch meant the cache was picked up on a
-    // cold tab and silently dropped on every refresh, which is why the load log read
-    // "cached: 0 | to fetch: 29" even though the data was sitting in KV.
-    if (parsed && Object.keys(parsed).length && !Object.keys(_claStoredParsed).length) {
-      _claStoredParsed = parsed;
-      console.log('Loaded CLA cache from KV:', Object.keys(parsed).length, 'sheet(s)');
-    }
-  } catch(e) {}
-}
 
 
 // ── [from LC dashboard] Roster edits ────────────────────────────────────────────────
@@ -3305,29 +2435,6 @@ async function saveRosterToGitHub() {
     await saveJsonToGitHub('roster.json', rosterData);
   } catch(e) { handleSaveError(e, 'roster.json'); }
 }
-
-function getRosterClaRecommendations() {
-  // Players present in any CLA sheet but not in roster and not excluded
-  const rosterNorm = new Set(rosterData.players.map(p => normalizeName(p.name)));
-  const excludedNorm = new Set((rosterData.excluded || []).map(n => normalizeName(n)));
-  const candidates = new Set();
-  for (const key of Object.keys(claDataByPlayer)) {
-    if (!rosterNorm.has(key) && !excludedNorm.has(key)) {
-      // Find display name from CLA data
-      for (const sheet of claSheets) {
-        // scan latestGearIssuesByPlayer and buffConsumables keys
-      }
-      candidates.add(key);
-    }
-  }
-  // Also scan latestGearIssuesByPlayer for names
-  for (const key of Object.keys(latestGearIssuesByPlayer)) {
-    if (!rosterNorm.has(key) && !excludedNorm.has(key)) candidates.add(key);
-  }
-  return [...candidates];
-}
-
-
 
 function rosterUpdateClassOptions() {
   const role = document.getElementById('rosterAddRole')?.value;
@@ -3636,7 +2743,7 @@ function normalizeRaid(r) {
   r.softres.forEach(s => { s.id ||= _uid('s_'); s.reserves ||= []; s.edits ||= {}; s.instances ||= []; });
   r.attendance ||= {};
   r.attendance.overrides ||= {};
-  r.attendance.cla ||= [];
+  delete r.attendance.cla; delete r.claLabel; // CLA retired — Warcraft Logs (raid.wcl) replaces it
   r.loot = Array.isArray(r.loot) ? r.loot : [];
   r.loot.forEach(l => { l.id ||= _uid('l_'); });
   r.label = formatRaidLabel(new Date(r.date + 'T19:00:00Z'));
@@ -4025,7 +3132,7 @@ function rosterPlayer(key) { return rosterData.players.find(p => normalizeName(p
 // edits[charKey] = { name, items:[wowheadIds] } replaces that character's list
 // (an empty list removes them); characters only in edits are manual additions.
 // ── Name matching ─────────────────────────────────────────────
-// WoW Forever names are "First Last". Softres, CLA and Gargul names may be the first name,
+// WoW Forever names are "First Last". Softres, Warcraft Logs and Gargul names may be the first name,
 // the last name, or both — accent-insensitive — and Gargul adds the realm ("Bunzie-Dreamscythe").
 // A name resolves, in order, by: Discord ID → exact raider name → any of the raider's AKAs
 // (alternate spellings, alt characters, softres names; a 15–22 digit AKA is a Discord ID) →
@@ -4089,7 +3196,7 @@ function isIgnoredName(name) {
 }
 
 // ── Unrecognised names: everything seen in raid data that doesn't resolve to a raider ──
-// Returns [{ key, name, seen: { softres|cla|loot|gargul: Set(raidId) }, suggest: [playerKey] }]
+// Returns [{ key, name, seen: { softres|wcl|loot|gargul|raidhelper: Set(raidId) }, suggest: [playerKey] }]
 function unrecognizedNames() {
   const out = new Map();
   const note = (name, src, raidId, extra) => {
@@ -4105,8 +3212,7 @@ function unrecognizedNames() {
   };
   for (const r of raidsData.raids) {
     for (const s of r.softres) for (const e of Object.values(effectiveReserves(s))) note(e.name, 'softres', r.id);
-    const live = r.claLabel ? claPlayersByLabel[r.claLabel] : null;
-    for (const k of (live && live.size ? [...live] : r.attendance.cla)) note(canonicalNames[k] || k, 'cla', r.id);
+    for (const p of Object.values(r.wcl?.players || {})) note(p.name, 'wcl', r.id, { cls: p.cls });
     for (const l of r.loot) note(l.recipient, 'loot', r.id);
     for (const a of r.gargul?.awards || []) { if (!a.de) note(a.to, 'gargul', r.id); for (const x of a.rolls || []) note(x.player, 'gargul', r.id); }
     for (const u of r.raidHelper?.signUps || []) note(u.name, 'raidhelper', r.id, { userId: u.userId, cls: rhClassOf(u), role: RH_ROLE[u.roleName] || '' });
@@ -4204,22 +3310,15 @@ function reserveLimitOf(raid) {
 // Attendance — one answer per raid per raider: status present | bench | absent, plus a source:
 //   1. manual mark (true / false / 'bench' / 'severe')  (source: 'manual')
 //      'severe' = severe absence: absent, plus whatever the SR rules set (−N SRs, BLP reset)
-//   2. CLA presence, once a CLA is attached    (source: 'cla') — not in the CLA but signed up
+//   2. Warcraft Logs: in the night's log at all  (source: 'wcl') — not in the log but signed up
 //      as Bench on Raid-Helper → bench          (source: 'raidhelper')
 //   3. Raid-Helper sign-ups, when linked        (source: 'raidhelper', see raidHelperExpectation)
 //   4. active raid → every active raider       (source: 'assumed')
-//   5. past raid, no CLA                        (source: 'softres': anyone who reserved)
+//   5. past raid, no log                        (source: 'softres': anyone who reserved)
 // A manual mark only ever changes that one raider; everyone else keeps their default.
 // `present` = counts as attended: true for present, and for bench when the SR rule says so.
 // Reserves are only ever charged to status 'present' (nobody pays for a raid they weren't in).
 // ═════════════════════════════════════════════════════════════════════════════
-function raidClaSet(raid) {
-  const live = raid.claLabel ? claPlayersByLabel[raid.claLabel] : null;
-  const src = live && live.size ? [...live] : raid.attendance.cla;
-  if (!src.length) return null;
-  return new Set(src.map(k => resolveRosterKey(canonicalNames[k] || k))); // CLA names may be first or last name only
-}
-
 function isActiveRaiderFor(key, raid) {
   const p = rosterPlayer(key);
   if (!p) return false;
@@ -4243,8 +3342,8 @@ function attendanceOf(raid, key) {
   const ov = raid.attendance.overrides[key];
   if (ov !== undefined) res = _att(ov === 'bench' ? 'bench' : ov === 'severe' ? 'absent' : ov ? 'present' : 'absent', 'manual', null, ov === 'severe');
   else {
-    const cla = raidClaSet(raid), rhx = raid.raidHelper ? raidHelperExpectation(raid) : null;
-    if (cla) res = cla.has(key) ? _att('present', 'cla') : rhx?.[key]?.status === 'bench' ? _att('bench', 'raidhelper') : _att('absent', 'cla');
+    const log = raidWclSet(raid), rhx = raid.raidHelper ? raidHelperExpectation(raid) : null;
+    if (log) res = log.has(key) ? _att('present', 'wcl') : rhx?.[key]?.status === 'bench' ? _att('bench', 'raidhelper') : _att('absent', 'wcl');
     else if (rhx) { const x = rhx[key]; res = x ? _att(x.status, 'raidhelper', x.flag) : reservedCount(raid, key) > 0 ? _att('present', 'raidhelper', 'no sign-up') : _att('absent', 'raidhelper', 'no sign-up'); }
     else if (raid.status === 'active') res = _att(isActiveRaiderFor(key, raid) ? 'present' : 'absent', 'assumed');
     else res = _att(reservedCount(raid, key) > 0 ? 'present' : 'absent', 'softres');
@@ -4275,7 +3374,7 @@ function raidHelperExpectation(raid) {
 // SR ledger — recomputed from scratch, chronologically, per raider.
 //   Earned per attended raid: perRaid
 //     + 1 on every Nth consecutive attended raid (streak; optional raids never break it)
-//     + 1 if that raid's buff score ≥ threshold (only once the CLA is in)
+//     + 1 if that raid's consumes score ≥ threshold (needs the log and consumable rules)
 //   Spent: 1 per reserve placed on a raid they attended (won or not).
 //   Past raids can never spend below 0 — a reserve beyond the balance at the time
 //   (e.g. after a rules change) is recorded as "over" and forgiven. Active raids are
@@ -4283,12 +3382,7 @@ function raidHelperExpectation(raid) {
 //   Manual adjustments apply on their date (before that day's raid) and floor at 0.
 // ═════════════════════════════════════════════════════════════════════════════
 let _derived = null;
-function invalidateDerived() { _derived = null; _attMemo.clear(); _rhxMemo.clear(); _nameIndex = null; }
-
-function buffScoreFor(playerName, date) {
-  const v = rawBuffScoresByDate(playerName)[date];
-  return v === undefined || v === null ? null : Math.round(v);
-}
+function invalidateDerived() { _derived = null; _attMemo.clear(); _rhxMemo.clear(); _consMemo.clear(); _nameIndex = null; }
 
 function computeSrLedger() {
   const raids = sortedRaids();
@@ -4314,7 +3408,7 @@ function computeSrLedger() {
         if (r.status === 'past' && att.bench) {
           if (srRules.buff.enabled) buffBonus = 1; // benched (and counted as attended): always gets the consumes bonus
         } else if (r.status === 'past') {
-          buffScore = buffScoreFor(p.name, r.date);
+          buffScore = consumeScore(r, key)?.pct ?? null;
           if (srRules.buff.enabled && buffScore !== null && buffScore >= srRules.buff.threshold) buffBonus = 1;
         }
       } else if (att.bench) {
@@ -4490,7 +3584,7 @@ async function syncRaidHelper(raid) {
 function applyRaidHelperSeeds(raid) {
   const ev = raid.raidHelper?.event, sd = raid.seeded || {}; if (!ev) return;
   if (sd.name && ev.displayTitle) raid.name = ev.displayTitle;
-  if (sd.date && ev.date && ev.date !== raid.date && !raid.claLabel && !raidsData.raids.some(r => r !== raid && r.date === ev.date)) { raid.date = ev.date; normalizeRaid(raid); }
+  if (sd.date && ev.date && ev.date !== raid.date && !raid.wcl?.reports?.length && !raidsData.raids.some(r => r !== raid && r.date === ev.date)) { raid.date = ev.date; normalizeRaid(raid); }
   // Softres attached on Raid-Helper after the raid was linked: add the sheet if the raid has none
   if (ev.softresId && !raid.softres.length) raid.softres.push({ id: _uid('s_'), code: ev.softresId, url: `https://softres.it/raid/${ev.softresId}`, addedAt: new Date().toISOString(), reserves: [], edits: {}, instances: [], fromRaidHelper: true });
 }
@@ -4538,7 +3632,7 @@ function preRaidChecks(raid) {
   add('unsure', n => `${n} unconfirmed`, raiders.filter(([k]) => { const a = attendanceOf(raid, k); return a.status === 'present' && ['unconfirmed', 'no sign-up'].includes(a.flag); })
     .map(([k, p]) => ({ key: k, name: p.name, detail: attendanceOf(raid, k).flag === 'no sign-up' ? 'no Raid-Helper sign-up (expected because they reserved)' : 'not confirmed in the comp' })));
   add('unknown', n => `${n} unknown name${n === 1 ? '' : 's'}`, unrecognizedNames().filter(e => Object.values(e.seen).some(s => s.has(raid.id)))
-    .map(e => ({ key: e.key, name: e.name, unknown: true, detail: Object.entries(e.seen).filter(([, s]) => s.has(raid.id)).map(([src]) => ({ softres: 'softres', cla: 'CLA', loot: 'loot log', gargul: 'Gargul', raidhelper: 'Raid-Helper' })[src] || src).join(', ') })));
+    .map(e => ({ key: e.key, name: e.name, unknown: true, detail: Object.entries(e.seen).filter(([, s]) => s.has(raid.id)).map(([src]) => ({ softres: 'softres', wcl: 'Warcraft Logs', loot: 'loot log', gargul: 'Gargul', raidhelper: 'Raid-Helper' })[src] || src).join(', ') })));
   add('over', n => `${n} over-reserved`, raiders.map(([k, p]) => [k, p, led[k]?.events.find(e => e.raidId === raid.id && e.over > 0)]).filter(x => x[2])
     .map(([k, p, e]) => ({ key: k, name: p.name, detail: `reserved ${e.reserved}, has ${e.reserved - e.over}` })));
   return out;
@@ -4720,6 +3814,227 @@ async function syncSoftres(raids, { quiet = false } = {}) {
   return { changed, imported, errors };
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Warcraft Logs — attendance and consumables, replacing the CLA.
+//
+// Officers' browsers query Warcraft Logs' GraphQL API through the Worker (/wcl/<site>, which
+// holds the API client secret). What we keep per raid, in raids.json, is small:
+//   raid.wcl = { reports:[{code,site,title,start,end,zone}], manual?:true, fights:[{name,kill,report}],
+//                players:{ lcName: { name, cls, f: fightMask, b: { abilityId: fightMask }, g?: { slot: itemId } } },
+//                abilities:{ id: name }, syncedAt, error?, demo? }
+// fightMask: bit i set = boss fight i (index into fights). Buff = active at any point in that fight.
+// Only consumable-like buffs are kept (see _wclKeepBuff) so raids.json stays small.
+// Weapon oils/stones/poisons come from the per-pull gear snapshot as pseudo ability "we:<id>",
+// plus "we:any" for "any weapon enhancement".
+// ═════════════════════════════════════════════════════════════════════════════
+
+const WCL_WE_ANY = 'we:any';
+// Temporary weapon enchant IDs (Classic Era) → names. Unknown IDs show as "Weapon enhancement #id".
+const WCL_TEMP_ENCHANTS = {
+  2506: 'Elemental Sharpening Stone', 1643: 'Dense Sharpening Stone', 1703: 'Dense Weightstone', 483: 'Solid Sharpening Stone',
+  2628: 'Brilliant Wizard Oil', 2629: 'Brilliant Mana Oil', 2627: 'Wizard Oil', 2625: 'Lesser Mana Oil', 2624: 'Minor Mana Oil',
+  2623: 'Minor Wizard Oil', 2626: 'Lesser Wizard Oil', 2685: 'Blessed Wizard Oil', 2684: 'Consecrated Sharpening Stone',
+  25: 'Shadow Oil', 26: 'Frost Oil', 625: 'Instant Poison VI', 2630: 'Deadly Poison V', 2640: 'Anesthetic Poison',
+  7: 'Deadly Poison', 323: 'Instant Poison III', 624: 'Instant Poison V', 626: 'Deadly Poison IV',
+};
+// Buffs we know are consumables (Classic Era). New WoW Forever consumables are picked up by the
+// "seen on several classes, self-applied" rule below and can be added to rules from the logs.
+const WCL_CONSUMABLES = {
+  17626: 'Flask of the Titans', 17627: 'Distilled Wisdom', 17628: 'Supreme Power', 17629: 'Chromatic Resistance',
+  17538: 'Elixir of the Mongoose', 11405: 'Elixir of the Giants', 17539: 'Greater Arcane Elixir', 11390: 'Arcane Elixir',
+  11474: 'Shadow Power', 26276: 'Greater Firepower', 7844: 'Fire Power', 21920: 'Frost Power', 11348: 'Greater Armor',
+  11349: 'Armor', 3593: 'Elixir of Fortitude', 3223: "Major Troll's Blood", 24361: 'Major Troll\'s Blood Elixir', 24363: 'Mageblood Potion',
+  11371: 'Gift of Arthas', 10668: 'Spirit of Boar', 16329: 'Juju Might', 16323: 'Juju Power', 16326: 'Juju Ember', 16325: 'Juju Chill',
+  24382: 'Spirit of Zanza', 24383: 'Swiftness of Zanza', 24417: 'Sheen of Zanza', 15233: 'Crystal Ward', 15279: 'Crystal Spire',
+  17038: 'Winterfall Firewater', 16609: 'Warchief\'s Blessing', 18125: 'Blessed Sunfruit', 18141: 'Blessed Sunfruit Juice',
+  18192: 'Well Fed (Grilled Squid)', 24799: 'Well Fed (Smoked Desert Dumplings)', 22730: 'Well Fed (Runn Tum Tuber)',
+  25661: 'Well Fed (Dirge\'s Kickin\' Chimaerok Chops)', 19710: 'Well Fed', 19711: 'Well Fed', 24870: 'Well Fed', 25694: 'Well Fed', 25941: 'Well Fed',
+  17528: 'Mighty Rage Potion', 6615: 'Free Action Potion', 3169: 'Limited Invulnerability Potion', 17543: 'Fire Protection',
+  17548: 'Shadow Protection', 17549: 'Arcane Protection', 17544: 'Frost Protection', 17546: 'Nature Protection', 7233: 'Fire Protection Potion',
+  11359: 'Restoration', 17540: 'Greater Stoneshield', 13455: 'Greater Stoneshield', 4941: 'Lesser Stoneshield', 29235: 'Fire Festival Fortitude',
+  27722: 'Sweet Surprise', 27723: 'Dark Desire', 16591: 'Noggenfogger Elixir', 16593: 'Noggenfogger Elixir', 16595: 'Noggenfogger Elixir',
+  11350: 'Fire Shield (Oil of Immolation)', 5665: 'Bogling Root', 12175: 'Scroll of Protection', 12176: 'Scroll of Stamina',
+  12177: 'Scroll of Strength', 12174: 'Scroll of Agility', 12178: 'Scroll of Intellect', 12179: 'Scroll of Spirit',
+};
+const _WCL_CONSUMABLE_NAME = /elixir|flask|potion|juju|zanza|scroll|well fed|food|drink|firewater|sunfruit|stoneshield|protection$|power$|wisdom|titans|oil|sharpen|weightstone|rumsey|gordok|kreeg|cerebral|r\.o\.i\.d\.s|ground scorpok|lung juice|toasted smorc|nightfin|sagefish|squid|dumpling/i;
+
+let WCL_SITE = 'vanilla';                       // which Warcraft Logs section (config: wcl_site)
+let WCL_GUILD = null;                           // { name, server, region } for automatic matching (config: wcl_guild_*)
+
+async function wclQuery(query, variables, site = WCL_SITE) {
+  if (!CF_WORKER_URL || !writeToken) throw new Error('Warcraft Logs needs the write token');
+  const res = await fetch(`${CF_WORKER_URL}/wcl/${site}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': writeToken }, body: JSON.stringify({ query, variables }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `Warcraft Logs HTTP ${res.status}`);
+  if (j.errors?.length) throw new Error('Warcraft Logs: ' + j.errors[0].message);
+  return j.data;
+}
+// A pasted report link → { code, site } (the site comes from the link: vanilla., fresh., …)
+function wclParseUrl(u) {
+  const s = String(u || '').trim();
+  const m = s.match(/(?:https?:\/\/)?(?:(\w+)\.)?warcraftlogs\.com\/reports\/(?:a:)?([A-Za-z0-9]{16})/);
+  if (m) return { code: m[2], site: m[1] && m[1] !== 'www' ? m[1] : WCL_SITE };
+  const c = s.match(/^([A-Za-z0-9]{16})$/);
+  return c ? { code: c[1], site: WCL_SITE } : null;
+}
+function wclReportUrl(r) { return `https://${r.site || WCL_SITE}.warcraftlogs.com/reports/${r.code}`; }
+// Gear snapshot slot index (combatant info) → the dashboard's gear slot names
+const WCL_GEAR_SLOTS = { 0: 'Head', 1: 'Neck', 2: 'Shoulders', 4: 'Chest', 5: 'Waist', 6: 'Legs', 7: 'Feet', 8: 'Bracers', 9: 'Hands',
+  10: 'Ring1', 11: 'Ring2', 12: 'Trinket1', 13: 'Trinket2', 14: 'Cloak', 15: 'Weapon', 16: 'Off-Hand', 17: 'Wand/Idol/Relic etc.' };
+function wclAbilityName(id, raid) {
+  if (id === WCL_WE_ANY) return 'Any weapon enhancement';
+  if (String(id).startsWith('we:')) { const n = +String(id).slice(3); return WCL_TEMP_ENCHANTS[n] || `Weapon enhancement #${n}`; }
+  return raid?.wcl?.abilities?.[id] || consumableCatalog()[id] || WCL_CONSUMABLES[id] || `Buff #${id}`;
+}
+
+// Is this buff worth keeping? Known consumables, anything used in a rule, consumable-looking
+// names, and self-applied buffs seen on 2+ classes (consumables and racials, not class spells).
+function _wclKeepBuff(id, name, selfClasses) {
+  if (WCL_CONSUMABLES[id] || consumableRuleIds().has(String(id))) return true;
+  if (_WCL_CONSUMABLE_NAME.test(name || '')) return true;
+  return (selfClasses?.size || 0) >= 2;
+}
+
+// One report → { code, title, zone, start, end, fights, players, abilities }
+async function wclReadReport(code, site = WCL_SITE) {
+  const meta = (await wclQuery(`query($c:String!){ reportData{ report(code:$c){ title startTime endTime zone{name}
+      masterData{ actors(type:"Player"){ id name subType } abilities{ gameID name } }
+      fights(killType:Encounters){ id name kill startTime endTime friendlyPlayers } } } }`, { c: code }, site)).reportData.report;
+  if (!meta) throw new Error('Report not found: ' + code);
+  const actors = new Map(meta.masterData.actors.map(a => [a.id, a]));
+  const abilityName = new Map((meta.masterData.abilities || []).map(a => [a.gameID, a.name]));
+  const fights = meta.fights.map(f => ({ id: f.id, name: f.name, kill: !!f.kill, start: f.startTime, end: f.endTime, players: f.friendlyPlayers || [] }));
+  const players = {};
+  const P = id => { const a = actors.get(id); if (!a) return null; const k = normalizeName(baseName(a.name)); return (players[k] ||= { name: baseName(a.name), cls: a.subType, f: 0, b: {} }); };
+  // Everyone in the log counts as present, boss fight or not
+  for (const a of meta.masterData.actors) P(a.id);
+  fights.forEach((f, i) => { for (const id of f.players) { const p = P(id); if (p) p.f = _or(p.f, 2 ** i); } });
+
+  // Buff events (apply / refresh / remove only) → active intervals per (player, buff)
+  const intervals = new Map(), open = new Map(), seen = new Set(), selfCls = new Map();
+  const reportEnd = meta.endTime - meta.startTime;
+  let t = 0;
+  for (let page = 0; t !== null && t !== undefined && page < 40; page++) {
+    const ev = (await wclQuery(`query($c:String!,$s:Float,$e:Float){ reportData{ report(code:$c){
+        events(dataType:Buffs, startTime:$s, endTime:$e, limit:10000, filterExpression:"type in (\\"applybuff\\",\\"refreshbuff\\",\\"removebuff\\")"){ data nextPageTimestamp } } } }`,
+      { c: code, s: t, e: reportEnd }, site)).reportData.report.events;
+    for (const e of ev.data) {
+      if (!actors.has(e.targetID)) continue;
+      const key = e.targetID + ':' + e.abilityGameID;
+      if (e.sourceID === e.targetID) { const s = (selfCls.get(e.abilityGameID) || new Set()); s.add(actors.get(e.targetID).subType); selfCls.set(e.abilityGameID, s); }
+      if (e.type === 'removebuff') {
+        const st = open.has(key) ? open.get(key) : (seen.has(key) ? null : 0); // first event is a remove → active since log start
+        if (st !== null) (intervals.get(key) || intervals.set(key, []).get(key)).push([st, e.timestamp]);
+        open.delete(key);
+      } else if (!open.has(key)) open.set(key, e.type === 'applybuff' || seen.has(key) ? e.timestamp : 0); // refresh with no apply → active since log start
+      seen.add(key);
+    }
+    t = ev.nextPageTimestamp;
+  }
+  for (const [key, st] of open) (intervals.get(key) || intervals.set(key, []).get(key)).push([st, reportEnd]);
+
+  const kept = {};
+  for (const [key, list] of intervals) {
+    const [tid, aid] = key.split(':').map(Number);
+    const name = abilityName.get(aid) || WCL_CONSUMABLES[aid] || '';
+    if (!_wclKeepBuff(aid, name, selfCls.get(aid))) continue;
+    const p = P(tid); let mask = 0;
+    fights.forEach((f, i) => { if (list.some(([a, b]) => a <= f.end && b >= f.start)) mask += 2 ** i; });
+    mask = _and(mask, p.f);
+    if (mask) { p.b[aid] = mask; kept[aid] = name || WCL_CONSUMABLES[aid] || `Buff #${aid}`; }
+  }
+
+  // Weapon enhancements from the per-pull snapshot
+  if (fights.length) {
+    const ci = (await wclQuery(`query($c:String!,$f:[Int]){ reportData{ report(code:$c){ events(dataType:CombatantInfo, fightIDs:$f, startTime:0, endTime:999999999999, limit:10000){ data } } } }`,
+      { c: code, f: fights.map(f => f.id) }, site)).reportData.report.events.data;
+    for (const e of ci) {
+      const i = fights.findIndex(f => f.id === e.fight); const p = P(e.sourceID); if (i < 0 || !p) continue;
+      if (e.gear?.length) p.g = Object.fromEntries(e.gear.map((g, n) => [WCL_GEAR_SLOTS[n], g.id]).filter(([sl, id]) => sl && id)); // latest pull wins
+      for (const g of e.gear || []) if (g.temporaryEnchant) {
+        const id = 'we:' + g.temporaryEnchant; p.b[id] = _or(p.b[id] || 0, 2 ** i); p.b[WCL_WE_ANY] = _or(p.b[WCL_WE_ANY] || 0, 2 ** i);
+        kept[id] = wclAbilityName(id);
+      }
+    }
+  }
+  return { code, site, title: meta.title, zone: meta.zone?.name || '', start: meta.startTime, end: meta.endTime,
+    fights: fights.map(f => ({ name: f.name, kill: f.kill, report: code })), players, abilities: kept };
+}
+
+// Several reports from one night → one record (fight masks shifted so indices stay unique)
+function wclMerge(parts) {
+  const out = { reports: [], fights: [], players: {}, abilities: {} };
+  for (const r of parts.sort((a, b) => a.start - b.start)) {
+    const off = out.fights.length;
+    out.reports.push({ code: r.code, site: r.site, title: r.title, zone: r.zone, start: r.start, end: r.end });
+    out.fights.push(...r.fights);
+    Object.assign(out.abilities, r.abilities);
+    for (const [k, p] of Object.entries(r.players)) {
+      const q = (out.players[k] ||= { name: p.name, cls: p.cls, f: 0, b: {} });
+      if (p.g) q.g = p.g;
+      q.f = _or(q.f, p.f * 2 ** off);
+      for (const [id, m] of Object.entries(p.b)) q.b[id] = (q.b[id] || 0) + m * 2 ** off; // masks never overlap across reports
+    }
+  }
+  return out;
+}
+
+// The guild's reports that started on this raid's night: noon → 8am next morning, server time
+// (US Mountain, like the rest of the dashboard's dates — see todayMST), whatever the viewer's zone.
+async function wclFindReports(raid) {
+  if (!WCL_GUILD?.name) return [];
+  const [y, m, d] = raid.date.split('-').map(Number);
+  const from = Date.UTC(y, m - 1, d, 12 + 7), to = from + 20 * 3600e3;
+  const r = (await wclQuery(`query($n:String,$s:String,$g:String,$a:Float,$b:Float){ reportData{ reports(guildName:$n, guildServerSlug:$s, guildServerRegion:$g, startTime:$a, endTime:$b, limit:25){ data{ code title startTime endTime zone{name} } } } }`,
+    { n: WCL_GUILD.name, s: WCL_GUILD.server, g: WCL_GUILD.region, a: from, b: to })).reportData.reports.data;
+  return r.filter(x => x.startTime >= from && x.startTime < to).map(x => ({ code: x.code, site: WCL_SITE }));
+}
+
+// Read (or re-read) a raid's logs. refs = pasted override [{code, site}]; otherwise the
+// automatic match on the guild's reports (or the reports pasted earlier, if overridden).
+async function syncWcl(raid, refs) {
+  if (raid.wcl?.demo) return false;
+  const manual = refs ? true : !!raid.wcl?.manual;
+  try {
+    const list = refs || (manual ? raid.wcl.reports.map(r => ({ code: r.code, site: r.site })) : await wclFindReports(raid));
+    if (!list.length) { raid.wcl = { reports: [], fights: [], players: {}, abilities: {}, manual: false, syncedAt: new Date().toISOString(), none: true }; return true; }
+    const parts = [];
+    for (const r of list) parts.push(await wclReadReport(r.code, r.site));
+    raid.wcl = { ...wclMerge(parts), manual, syncedAt: new Date().toISOString() };
+    _keepGearOnLatest(raid);
+    return true;
+  } catch (e) {
+    raid.wcl = { ...(raid.wcl || { reports: [], fights: [], players: {}, abilities: {} }), error: e.message, errorAt: new Date().toISOString() };
+    throw e;
+  }
+}
+// Current gear only matters for the newest logged raid; drop it from older ones to keep raids.json small
+function _keepGearOnLatest(raid) {
+  const newest = sortedRaids().filter(r => Object.keys(r.wcl?.players || {}).length).pop();
+  for (const r of raidsData.raids) if (r !== newest) for (const p of Object.values(r.wcl?.players || {})) delete p.g;
+  void raid;
+}
+
+// Present in the log (any of the night's reports): Set of roster keys, or null if no log yet
+function raidWclSet(raid) {
+  const pl = raid.wcl?.players; if (!pl || !Object.keys(pl).length) return null;
+  return new Set(Object.values(pl).map(p => resolveRosterKey(p.name)).filter(Boolean));
+}
+function raidWclPlayer(raid, key) {
+  for (const p of Object.values(raid.wcl?.players || {})) if (resolveRosterKey(p.name) === key) return p;
+  return null;
+}
+function _bits(m) { let n = 0; for (let x = m; x > 0; x = Math.floor(x / 2)) n += x % 2; return n; }
+function _and(a, b) { // masks can exceed 32 bits when reports are merged
+  let r = 0, p = 1; for (let x = a, y = b; x > 0 && y > 0; x = Math.floor(x / 2), y = Math.floor(y / 2), p *= 2) if (x % 2 && y % 2) r += p; return r;
+}
+function _or(a, b) { let r = 0, p = 1; for (let x = a, y = b; x > 0 || y > 0; x = Math.floor(x / 2), y = Math.floor(y / 2), p *= 2) if (x % 2 || y % 2) r += p; return r; }
+
+// % of the boss fights a raider was in that had this buff
+function wclBuffPct(p, id) { const n = _bits(p.f); return n ? Math.round(100 * _bits(_and(p.b[id] || 0, p.f)) / n) : 0; }
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Shared helpers
@@ -4761,8 +4076,8 @@ function flash(msg, type = 'success') { setStatus(msg, type); }
 // Navigation
 // ═════════════════════════════════════════════════════════════════════════════
 const _navDropdowns = ['navDdGuildMgmt'];
-const _navDropdownModes = { navDdGuildMgmt: ['roster', 'glossary', 'rules'] };
-const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', glossary: 'glossaryPanel', rules: 'rulesPanel' };
+const _navDropdownModes = { navDdGuildMgmt: ['roster', 'glossary', 'rules', 'consumes'] };
+const PANEL_IDS = { raids: 'raidsPanel', items: 'itemsPanel', roster: 'rosterPanel', glossary: 'glossaryPanel', rules: 'rulesPanel', consumes: 'consumesPanel' };
 
 function navDropdownToggle(id) {
   const menu = document.getElementById(id + 'Menu'), btn = document.getElementById(id + 'Btn');
@@ -4809,6 +4124,7 @@ function renderCurrent() {
   else if (groupingMode === 'roster') renderRosterPanel();
   else if (groupingMode === 'glossary') renderGlossaryPanel();
   else if (groupingMode === 'rules') renderRulesPanel();
+  else if (groupingMode === 'consumes') renderConsumesPanel();
 }
 
 // Recompute everything derived from data, then redraw the current view.
@@ -4856,13 +4172,7 @@ function buildRenderData() {
   return { dates, raids, roles: ROLE_ORDER.filter(r => roleMap[r]).map(r => ({ name: r, players: roleMap[r] })) };
 }
 
-// Buff score = the CLA's raw per-raid total. (The LC dashboard's weapon-oil exemptions and
-// outlier smoothing were TBC-specific and are not used here.)
-function rawBuffScoresByDate(playerName) {
-  const out = {};
-  for (const [d, v] of Object.entries(buffScoreByPlayerDate[normalizeName(playerName)] || {})) if (v && v.total !== null && v.total !== undefined) out[d] = v.total;
-  return out;
-}
+// Consumes score per raid = consumeScore() (Warcraft Logs vs the Consumable Rules).
 // Green at/above the buff-bonus threshold, then yellow → orange → red the further below.
 function buffColor(pct) {
   const t = srRules.buff.threshold;
@@ -4916,13 +4226,7 @@ function setSort(safeId, roleName, col) {
   render(lastRenderData);
 }
 
-function gearFlagHtml(playerName) {
-  const gi = latestGearIssuesByPlayer[normalizeName(playerName)];
-  const issues = (gi?.issues || []).filter(i => typeof i === 'string');
-  if (!issues.length) return '';
-  const col = gearColor(issues.length);
-  return `<span class="gear-flag" style="color:${col};filter:drop-shadow(0 0 4px ${col}88);" title="${escHtml(issues.join('\n')).replace(/\n/g, '&#10;')}">⚠</span>`;
-}
+function gearFlagHtml() { return ''; } // gear-issue flags came from the CLA; not tracked from Warcraft Logs (yet)
 
 function raidDotsHtml(p, raids) {
   const MAX = 10, start = Math.max(0, p.n - MAX);
@@ -4995,9 +4299,9 @@ function tableColgroup(withAction, withCurrent) {
   return `<colgroup><col style="width:calc(28ch + 24px);"><col style="width:32px;"><col style="width:13.5%;"><col style="width:12%;"><col><col style="width:5.5%;"><col style="width:16.5%;"></colgroup>`;
 }
 function tableHeadHtml(th, withAction, withCurrent) {
-  return `<tr>${th('Player', 'player', 'left')}${withCurrent ? '<th style="text-align:left;" title="Currently equipped in this slot, from the most recent CLA gear listing">Current</th>' : ''}<th></th>
+  return `<tr>${th('Player', 'player', 'left')}${withCurrent ? '<th style="text-align:left;" title="Currently equipped in this slot, from the newest Warcraft Logs report">Current</th>' : ''}<th></th>
     ${th('SR Balance', 'srs', 'center', 'Soft reserves this raider can spend right now (active raids included). Hover a value for the breakdown.')}
-    ${th('Consumes', 'consumes', 'center', 'CLA consumable score. Green = at or above the buff-bonus threshold.')}
+    ${th('Consumes', 'consumes', 'center', 'Consumes score from Warcraft Logs, against the Consumable Rules. Green = at or above the consumes-bonus threshold.')}
     <th style="text-align:center;" title="Last 10 past raids. Colour = consumable usage.">Raids</th>
     ${th('#', 'attendance')}${th('Attendance', 'pct')}${withAction ? '<th></th>' : ''}</tr>`;
 }
@@ -5126,7 +4430,7 @@ function raiderRaidListHtml(key, s, hist, loot) {
   }).join('')}</div>`;
 }
 
-// ── Currently equipped gear (from the most recent CLA gear listing) ──
+// ── Currently equipped gear (from the newest Warcraft Logs report, see rebuildGearListing) ──
 const GEAR_SLOT_MAP = {
   Head: ['Head'], Neck: ['Neck'], Shoulder: ['Shoulders'], Shoulders: ['Shoulders'], Back: ['Cloak'], Chest: ['Chest'],
   Wrist: ['Bracers'], Hands: ['Hands'], Waist: ['Waist'], Legs: ['Legs'], Feet: ['Feet'],
@@ -5142,7 +4446,7 @@ function currentGearHtml(playerName, slots) {
   const names = slots.map(sl => g[sl]).filter(Boolean);
   if (!names.length) return '<span style="color:var(--text-dim);">— empty —</span>';
   return names.map(n => {
-    const k = Object.keys(glossary.items).find(k => normalizeName(glossary.items[k].name) === normalizeName(n));
+    const k = String(n).startsWith('id:') ? n : Object.keys(glossary.items).find(k => normalizeName(glossary.items[k].name) === normalizeName(n));
     return `<div class="cur-item">${k ? itemLinkHtml(k) : escHtml(n)}</div>`;
   }).join('');
 }
@@ -5300,7 +4604,7 @@ function buildAutocomplete({ container, inputId, placeholder, items, renderOptio
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Raids page — list (new raid form, active raids, past raids) and raid detail
-// (Loot · Reserves · Attendance · CLA). Everything about a raid lives here.
+// (Loot · Reserves · Attendance · Consumes). Everything about a raid lives here.
 // ═════════════════════════════════════════════════════════════════════════════
 let _raidView = { raidId: '', sub: 'loot', raid: '', boss: '', item: '' };
 
@@ -5351,15 +4655,16 @@ function renderRaidsPanel() {
       </div>
       <div id="nrRhStatus" class="nr-rh-status"></div>
     </div>` : ''}
+    ${writeToken && RH_SERVER_ID ? plannedRaidsHtml() : ''}
     <div class="section-title">Active raids</div>
     ${act.length ? act.map(card).join('') : '<div class="gl-empty">No active raid.</div>'}
     <div class="section-title" style="margin-top:26px;">Past raids <span style="color:var(--text-dim);font-size:14px;letter-spacing:0.05em;">${past.length}</span></div>
-    ${past.length ? `<div style="overflow-x:auto;"><table class="mini-table raid-list"><thead><tr><th>Date</th><th>Raid</th><th>Present</th><th>Reserves</th><th>Loot</th><th>Gargul</th><th>CLA</th></tr></thead><tbody>
+    ${past.length ? `<div style="overflow-x:auto;"><table class="mini-table raid-list"><thead><tr><th>Date</th><th>Raid</th><th>Present</th><th>Reserves</th><th>Loot</th><th>Gargul</th><th>Logs</th></tr></thead><tbody>
       ${past.map(r => `<tr onclick="openRaid('${r.id}')" style="cursor:pointer;">
         <td>${fmtShort(r.date)}</td><td>${escHtml(r.name)} ${r.optional ? '<span class="tag-opt">optional</span>' : ''}</td>
         <td>${rosterKeys().filter(k => attendanceOf(r, k).status === 'present').length}</td>
         <td>${Object.values(raidReserves(r)).reduce((a, m) => a + Object.values(m).reduce((x, y) => x + y, 0), 0)}</td>
-        <td>${r.loot.length}</td><td>${gargulBadgeHtml(r) || '<span style="color:var(--text-dim);">—</span>'}</td><td>${r.claLabel ? '✓' : '<span style="color:var(--text-dim);">—</span>'}</td></tr>`).join('')}
+        <td>${r.loot.length}</td><td>${gargulBadgeHtml(r) || '<span style="color:var(--text-dim);">—</span>'}</td><td>${Object.keys(r.wcl?.players || {}).length ? '✓' : '<span style="color:var(--text-dim);">—</span>'}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="gl-empty">None yet.</div>'}`;
 }
 
@@ -5384,8 +4689,11 @@ async function createRaid() {
     raid.seeded = { name: !!pv && name === pv.event.displayTitle, date: !!pv && date === pv.event.date };
   }
   if (code) raid.softres.push({ id: _uid('s_'), code, url: `https://softres.it/raid/${code}`, addedAt: new Date().toISOString(), reserves: [], edits: {}, instances: [] });
+  const known = rhId && _planned.events?.find(e => e.id === rhId);
+  if (known?.channelId) raid.raidHelper.channelId = known.channelId;
   raidsData.raids.push(raid);
   await saveRaids().catch(() => {});
+  if (rhId && !raid.raidHelper.channelId && RH_SERVER_ID && !raid.raidHelper.demo) raidHelperChannelId(raid).then(() => saveRaids()).catch(() => {});
   if (rhId && !raid.raidHelper.syncedAt) { try { await syncRaidHelper(raid); await saveRaids().catch(() => {}); } catch (e) { flash(e.message, 'error'); } }
   _nrRh = { id: null, data: null };
   if (code) { flash('Fetching softres…', 'loading'); await syncSoftres([raid]); flash(raid.softres[0].syncError ? 'Softres sync failed — see the Reserves tab' : 'Raid started', raid.softres[0].syncError ? 'error' : 'success'); }
@@ -5401,7 +4709,7 @@ function renderRaidDetail(panel, raid) {
   const ledger = derived().ledger;
   const overs = Object.values(ledger).map(s => ({ s, e: s.events.find(e => e.raidId === raid.id && e.over > 0) })).filter(x => x.e);
   const unknown = Object.values(raid.softres.flatMap(s => Object.values(effectiveReserves(s)))).filter(r => !rosterPlayer(r.key));
-  const tabs = [['loot', 'Loot'], ['reserves', 'Reserves'], ['attendance', 'Attendance'], ['cla', 'CLA']];
+  const tabs = [['loot', 'Loot'], ['reserves', 'Reserves'], ['attendance', 'Attendance'], ...(writeToken ? [['consumes', 'Consumes']] : [])];
   panel.innerHTML = `
     <div class="raid-head ${raid.status}">
       <a class="back-link" onclick="closeRaid()">← All raids</a>
@@ -5427,6 +4735,7 @@ function renderRaidDetail(panel, raid) {
         <button class="small-gold-btn" onclick="saveRaidMeta('${raid.id}')">SAVE</button>
         <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Cancel</button></div>` : ''}
       ${raidHelperLineHtml(raid)}
+      ${wclLineHtml(raid)}
       ${raid.status === 'active' && writeToken ? preRaidPanelHtml(raid) : ''}
       ${overs.length && writeToken && raid.status !== 'active' ? `<div class="over-banner">⚠ Over-reserved: ${overs.map(({ s, e }) =>
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
@@ -5439,8 +4748,10 @@ function renderRaidDetail(panel, raid) {
   const el = document.getElementById('raidSub');
   if (sub === 'reserves') renderRaidReserves(el, raid);
   else if (sub === 'attendance') renderRaidAttendance(el, raid);
-  else if (sub === 'cla') renderRaidCla(el, raid);
+  else if (sub === 'consumes' && writeToken) renderRaidConsumes(el, raid);
   else renderRaidLoot(el, raid);
+  const st = panel.querySelector('.sub-tabs'), on = st?.querySelector('.sub-tab.on'); // narrow screens: keep the open tab visible
+  if (st && on && on.offsetLeft + on.offsetWidth > st.clientWidth) st.scrollLeft = on.offsetLeft + on.offsetWidth - st.clientWidth;
   refreshWowhead();
 }
 
@@ -5452,7 +4763,7 @@ async function saveRaidMeta(id) {
   const optional = document.getElementById('erOptional').checked;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('Pick a date.'); return; }
   if (date !== raid.date && raidsData.raids.some(r => r.date === date)) { alert('Another raid already uses that date.'); return; }
-  if (date !== raid.date && raid.claLabel) { alert('This raid has a CLA attached; remove it before changing the date.'); return; }
+  if (date !== raid.date && raid.wcl && !raid.wcl.manual && !raid.wcl.demo) raid.wcl = null; // matched by date — match again for the new date
   // Editing a seeded field by hand stops it following Raid-Helper
   raid.seeded ||= {};
   if (name !== raid.name) raid.seeded.name = false;
@@ -5476,9 +4787,8 @@ async function saveRaidMeta(id) {
 
 async function endRaid(id) {
   const raid = getRaid(id);
-  const hasCla = !!raidClaSet(raid), hasManual = Object.keys(raid.attendance.overrides).length > 0;
-  let note = hasCla ? 'Attendance comes from the CLA (plus any manual marks).' : raid.raidHelper ? 'Attendance comes from the Raid-Helper sign-ups (plus any manual marks).' : hasManual ? 'Attendance comes from reserves, plus your manual marks.'
-    : `No CLA or manual attendance yet — everyone who reserved on softres will count as present (${Object.keys(raidReserves(raid)).filter(k => rosterPlayer(k)).length} raiders). You can still add the CLA or edit attendance afterwards.`;
+  const note = 'Attendance and consumables are read from Warcraft Logs once the log is up (checked now and again on later page loads). Until then '
+    + (raid.raidHelper ? 'the Raid-Helper sign-ups stand in (plus any manual marks).' : `everyone who reserved counts as present (${Object.keys(raidReserves(raid)).filter(k => rosterPlayer(k)).length} raiders), plus any manual marks.`);
   const announce = canAnnounce(raid) && !!document.getElementById('announceLoot')?.checked;
   const where = raid.raidHelper?.demo ? ` the test channel (${DEMO_ANNOUNCE_CHANNEL})` : raid.raidHelper?.event?.channelName ? ` #${raid.raidHelper.event.channelName}` : ' the Raid-Helper sign-up channel';
   if (!confirm(`End "${raid.name}"?\n\n${note}\n\nReserves beyond anyone's balance are forgiven once the raid ends.${announce ? `\n\nThe loot and current bad luck protection will be posted to${where}.` : ''}`)) return;
@@ -5487,6 +4797,7 @@ async function endRaid(id) {
   await saveRaids().catch(() => {});
   refreshAll();
   if (announce) await announceRaidLoot(raid);
+  if (!raid.wcl?.demo && (WCL_GUILD?.name || raid.wcl?.manual)) refreshWcl(raid.id); // the log may still be uploading; retried automatically later
 }
 async function reopenRaid(id) {
   const raid = getRaid(id);
@@ -5500,7 +4811,6 @@ async function deleteRaid(id) {
   const typed = prompt(`Delete "${raid.name}" (${raid.date}) with its ${raid.loot.length} loot entries, reserves and attendance?\nThis cannot be undone. Type the date to confirm:`);
   if (typed !== raid.date) return;
   raidsData.raids = raidsData.raids.filter(r => r.id !== id);
-  if (raid.claLabel) { const i = claSheets.findIndex(s => s.label === raid.claLabel); if (i >= 0) removeCla(i); }
   await saveRaids().catch(() => {});
   closeRaid(); refreshAll();
 }
@@ -6037,7 +5347,7 @@ async function addReserveManual(raidId, sheetId) {
 }
 
 // ── Attendance ──────────────────────────────────────────────────
-const ATT_SOURCE_LABEL = { manual: 'Manual', cla: 'CLA', assumed: 'Assumed (active)', softres: 'From reserves', raidhelper: 'Raid-Helper' };
+const ATT_SOURCE_LABEL = { manual: 'Manual', wcl: 'Warcraft Logs', assumed: 'Assumed (active)', softres: 'From reserves', raidhelper: 'Raid-Helper' };
 function renderRaidAttendance(el, raid) {
   const players = rosterData.players.filter(p => !rosterData.excluded?.includes(p.name))
     .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name));
@@ -6057,7 +5367,7 @@ function renderRaidAttendance(el, raid) {
       ${benched.length ? `<span class="iv-dim">· ${benched.length} benched</span>` : ''}
       ${flagged.length ? `<span class="iv-dim">· ${flagged.length} with a “?”</span>` : ''}
     </div>
-    <div class="att-legend iv-dim">Click a raider to cycle: <b>default</b> (worked out from CLA / Raid-Helper / reserves, shown faded) → <b>✓</b> present → <b>✕</b> absent → <b class="att-sev">!</b> severe absence → <b>B</b> bench → default. Right-click goes back.</div>
+    <div class="att-legend iv-dim">Click a raider to cycle: <b>default</b> (worked out from Warcraft Logs / Raid-Helper / reserves, shown faded) → <b>✓</b> present → <b>✕</b> absent → <b class="att-sev">!</b> severe absence → <b>B</b> bench → default. Right-click goes back.</div>
     <div class="att-grid">${atts.map(([p, k, a]) => {
       const ov = raid.attendance.overrides[k];
       const on = a.status === 'present';
@@ -6091,7 +5401,7 @@ function benchRaider(raidId) {
   if (!k) { flash('Pick a raider from the list.', 'error'); return; }
   setRaidAttendance(raidId, k, 'bench');
 }
-// Clear a manual bench; a bench that came from Raid-Helper/CLA is overridden to present
+// Clear a manual bench; a bench that came from Raid-Helper is overridden to present
 function unbenchRaider(raidId, k) {
   const raid = getRaid(raidId);
   if (raid.attendance.overrides[k] === 'bench') { delete raid.attendance.overrides[k]; invalidateDerived(); if (attendanceOf(raid, k).bench) raid.attendance.overrides[k] = true; }
@@ -6109,103 +5419,6 @@ function setRaidAttendance(raidId, key, value) {
   clearTimeout(_attSaveTimer);
   _attSaveTimer = setTimeout(() => saveRaids().catch(() => {}), 700);
   refreshAll();
-}
-
-// ── CLA ─────────────────────────────────────────────────────────
-function renderRaidCla(el, raid) {
-  const sheet = raid.claLabel ? claSheets.find(s => s.label === raid.claLabel) : null;
-  const cla = raidClaSet(raid);
-  if (sheet || cla) {
-    el.innerHTML = `<div class="sheet-card">
-      <div class="sheet-head"><span class="sheet-code">CLA ${escHtml(raid.claLabel || '')}</span>
-        <span style="color:var(--text-dim);font-size:15px;">${sheet?.url ? `<a href="${escHtml(sheet.url)}" target="_blank" rel="noopener" style="color:inherit;">Google Sheet</a>` : sheet ? 'pasted data' : 'cached'} · ${cla ? cla.size : 0} players present</span>
-        <span class="write-gated-hide" style="margin-left:auto;display:flex;gap:6px;">
-          ${sheet?.sheetId ? `<button class="ghost-btn" onclick="refetchRaidCla('${raid.id}')">↻ Re-fetch</button>` : ''}
-          <button class="ghost-btn danger" onclick="removeRaidCla('${raid.id}')">Remove</button>
-        </span></div>
-      <div style="font-size:15px;color:var(--text-dim);">Present: ${cla ? [...cla].map(k => playerNameHtml(rosterPlayer(k)?.name || canonicalNames[k] || k)).join(', ') : '—'}</div>
-    </div>`;
-    return;
-  }
-  el.innerHTML = `<div class="sheet-card">
-    <div class="gl-col-title">CLA</div>
-    ${ENABLE_APPS_SCRIPT ? `<div class="raid-new-grid" style="grid-template-columns:2fr 1fr 1fr 1fr auto;">
-        <input id="claUrlIn" class="gl-input" placeholder="Google Sheet URL">
-        <input id="claGearGidIn" class="gl-input" placeholder="Issues GID">
-        <input id="claBuffGidIn" class="gl-input" placeholder="Consumes GID">
-        <input id="claListGidIn" class="gl-input" placeholder="Gear GID (optional)">
-        <button class="small-gold-btn write-gated" onclick="attachRaidCla('${raid.id}')">ATTACH</button></div>`
-      : `<textarea id="claPasteGearIn" class="gl-input" rows="3" placeholder="Paste the Gear Issues tab"></textarea>
-         <textarea id="claPasteBuffIn" class="gl-input" rows="3" placeholder="Paste the Buff Consumables tab" style="margin-top:6px;"></textarea>
-         <textarea id="claPasteListIn" class="gl-input" rows="3" placeholder="Paste the Gear Listing tab (optional)" style="margin-top:6px;"></textarea>
-         <button class="small-gold-btn write-gated" style="margin-top:6px;" onclick="attachRaidCla('${raid.id}')">ATTACH</button>`}
-  </div>`;
-}
-
-async function attachRaidCla(raidId) {
-  const raid = getRaid(raidId);
-  const label = raid.date; // CLA labels are the raid's ISO date
-  if (claSheets.some(s => s.label === label)) { alert('A CLA with this date is already stored — remove it first.'); return; }
-  if (raid.status === 'active' && !confirm('Attaching the CLA ends this raid and makes the CLA the source of attendance. Continue?')) return;
-  let entry;
-  if (ENABLE_APPS_SCRIPT) {
-    const url = document.getElementById('claUrlIn').value.trim();
-    const gearGid = document.getElementById('claGearGidIn').value.trim();
-    const buffGid = document.getElementById('claBuffGidIn').value.trim();
-    const gearListingGid = document.getElementById('claListGidIn').value.trim();
-    const sheetId = extractSheetId(url);
-    if (!sheetId || !gearGid || !buffGid) { alert('Need the Sheet URL, Issues GID and Consumes GID.'); return; }
-    entry = { label, url, sheetId, gearGid, buffGid };
-    if (gearListingGid) entry.gearListingGid = gearListingGid;
-  } else {
-    const g = document.getElementById('claPasteGearIn').value.trim(), b = document.getElementById('claPasteBuffIn').value.trim();
-    const l = document.getElementById('claPasteListIn').value.trim();
-    if (!g || !b) { alert('Paste the Gear Issues and Buff Consumables tabs.'); return; }
-    entry = { label, csvGear: normalizeClaPaste(g), csvBuff: normalizeClaPaste(b) };
-    if (l) entry.csvGearListing = normalizeClaPaste(l);
-  }
-  claSheets.push(entry);
-  saveClaSheets();
-  raid.claLabel = label;
-  if (raid.status === 'active') { raid.status = 'past'; raid.endedAt = new Date().toISOString(); }
-  flash('Reading CLA…', 'loading');
-  await fetchData({ skipSoftres: true });
-  if (!claPlayersByLabel[label]?.size) {
-    flash('CLA attached, but no players were read from it — check the GIDs/paste and use Re-fetch.', 'error');
-  } else flash(`CLA attached — ${claPlayersByLabel[label].size} players present`);
-  await saveClaSheetsToGitHub();
-  await saveRaids().catch(() => {});
-  refreshAll();
-}
-async function refetchRaidCla(raidId) {
-  const raid = getRaid(raidId);
-  delete _claStoredParsed[raid.claLabel];
-  flash('Re-fetching CLA…', 'loading');
-  await fetchData({ skipSoftres: true });
-  refreshAll();
-}
-async function removeRaidCla(raidId) {
-  const raid = getRaid(raidId);
-  if (!confirm('Remove the CLA from this raid? Attendance falls back to manual marks / reserves, and its buff scores stop counting.')) return;
-  const i = claSheets.findIndex(s => s.label === raid.claLabel);
-  if (i >= 0) removeCla(i);
-  raid.claLabel = null; raid.attendance.cla = [];
-  await saveRaids().catch(() => {});
-  await fetchData({ skipSoftres: true });
-}
-
-// After CLA data loads, copy each raid's CLA presence into the raid itself, so
-// attendance survives even if the CLA sheet is later unreachable.
-function bakeClaPresence() {
-  let changed = false;
-  for (const r of raidsData.raids) {
-    const live = r.claLabel ? claPlayersByLabel[r.claLabel] : null;
-    if (live && live.size) {
-      const arr = [...live].sort();
-      if (JSON.stringify(arr) !== JSON.stringify([...r.attendance.cla].sort())) { r.attendance.cla = arr; changed = true; }
-    }
-  }
-  return changed;
 }
 
 // ── End-of-raid announcement (Raid-Helper's embed endpoint, via the Worker) ──
@@ -6253,7 +5466,7 @@ function _chunkLines(lines, max = DISCORD_DESC_MAX) {
 function discordSummaryEmbeds(raid) {
   const lootLine = l => {
     const k = lootKey(l), r = l.sr && k ? rollFor(raid, k, l.itemKey) : null;
-    return `• ${_dItem(l.itemKey, true)} → **${_dName(k, l.recipient)}**${r && r.bonus > 0 ? ` *(rolled 1-${r.max}, BLP reset)*` : ''}`;
+    return `• ${_dItem(l.itemKey, true)} → **${_dName(k, l.recipient)}**${r && r.bonus > 0 ? ` *(rolled 1-${r.max})*` : ''}`;
   };
   const sr = raid.loot.filter(l => l.sr), ms = raid.loot.filter(l => !l.sr);
   const lootLines = [];
@@ -6264,13 +5477,24 @@ function discordSummaryEmbeds(raid) {
 
   // Current BLP; ▲ = went up in this raid (latest raid only)
   const latest = !raidsData.raids.some(r => r.id !== raid.id && r.date > raid.date);
-  const rows = Object.entries(derived().blp.losses).map(([k, m]) => {
-    const items = Object.entries(m || {}).filter(([, n]) => n > 0)
+  // Items won in this raid with BLP on them (and not lost again since) — shown struck through
+  const wonBy = {};
+  for (const l of raid.loot.filter(l => l.sr)) {
+    const k = lootKey(l), before = k ? blpLossesBefore(raid.id, k, l.itemKey) : 0;
+    if (before > 0 && !(derived().blp.losses[k]?.[l.itemKey] > 0)) (wonBy[k] ||= []).push([l.itemKey, before]);
+  }
+  const keys = new Set([...Object.keys(derived().blp.losses), ...Object.keys(wonBy)]);
+  const rows = [...keys].map(k => {
+    const items = Object.entries(derived().blp.losses[k] || {}).filter(([, n]) => n > 0)
       .sort((a, b) => b[1] - a[1] || itemName(a[0]).localeCompare(itemName(b[0])));
-    return { k, name: _dName(k), items };
-  }).filter(r => r.items.length && rosterPlayer(r.k)).sort((a, b) => a.name.localeCompare(b.name));
-  const blpLines = rows.map(r => `**${r.name}** — ` + r.items.map(([ik, n]) =>
-    `${_dItem(ik, false)} +${rollMax(n) - 100}${latest && n > blpLossesBefore(raid.id, r.k, ik) ? ' ▲' : ''}`).join(' · '));
+    return { k, name: _dName(k), items, won: wonBy[k] || [] };
+  }).filter(r => (r.items.length || r.won.length) && rosterPlayer(r.k)).sort((a, b) => a.name.localeCompare(b.name));
+  const blpLines = rows.map(r => {
+    const cur = r.items.map(([ik, n]) => `${_dItem(ik, false)} +${rollMax(n) - 100}${latest && n > blpLossesBefore(raid.id, r.k, ik) ? ' ▲' : ''}`);
+    const won = r.won.map(([ik, n]) => `~~${_dItem(ik, false)} +${rollMax(n) - 100}~~`);
+    // Won everything they had BLP on: strike the whole line
+    return cur.length ? `**${r.name}** — ${[...cur, ...won].join(' · ')}` : `~~**${r.name}** — ${won.join(' · ').replace(/~~/g, '')}~~`;
+  });
   if (!blpLines.length) blpLines.push('*Nobody has bad luck protection right now.*');
 
   const head = `${raid.name} · ${fmtDate(raid.date)}`;
@@ -6314,6 +5538,71 @@ async function announceRaidLoot(raid) {
     flash(`Raid ended, but the Discord announcement failed${sent ? ` after ${sent} message${sent === 1 ? '' : 's'}` : ''}: ${err.message}`, 'error');
   }
   if (sent) { raid.discordPostedAt = new Date().toISOString(); await saveRaids().catch(() => {}); refreshAll(); }
+}
+
+// ── Planned raids: Raid-Helper sign-ups on the server that no raid here is linked to yet ──
+// Server API (via the Worker): every posted event with its time, sign-up count and channel.
+// Shows events starting from a week ago onward; Start creates the raid as if its link was pasted.
+let _planned = { at: 0, events: null, error: null, loading: false };
+const PLANNED_LOOKBACK_DAYS = 7;
+async function loadPlannedRaids(force) {
+  if (_planned.loading || (!force && _planned.events && Date.now() - _planned.at < 5 * 60e3)) return;
+  _planned.loading = true;
+  try {
+    const all = [];
+    for (let page = 1; page <= 10; page++) {
+      const res = await fetch(_rhServerUrl(`events?page=${page}`), { headers: { 'X-Token': writeToken } });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || 'HTTP ' + res.status);
+      all.push(...(j.postedEvents || []));
+      if (!j.pages || page >= j.pages) break;
+    }
+    _planned = { at: Date.now(), error: null, loading: false, events: all.map(e => ({ id: String(e.id), title: e.title || '(untitled)', startTime: +e.startTime || 0,
+      signUps: +e.signUpCount || 0, channelId: String(e.channelId || ''), leader: e.leaderName || '' })) };
+  } catch (e) { _planned = { ..._planned, loading: false, error: e.message, at: Date.now() }; }
+  if (!_raidView.raidId) renderRaidsPanel();
+}
+function plannedRaidList() {
+  const linked = new Set(raidsData.raids.map(r => r.raidHelper?.eventId).filter(Boolean));
+  const hidden = new Set(raidsData.hiddenEvents || []);
+  const from = Date.now() / 1000 - PLANNED_LOOKBACK_DAYS * 86400;
+  return (_planned.events || []).filter(e => e.startTime >= from && !linked.has(e.id) && !hidden.has(e.id)).sort((a, b) => a.startTime - b.startTime);
+}
+function plannedRaidsHtml() {
+  if (!_planned.events && !_planned.error) { loadPlannedRaids(); return '<div class="section-title">Planned raids</div><div class="gl-empty">Loading Raid-Helper sign-ups…</div>'; }
+  const list = plannedRaidList(), nHidden = (raidsData.hiddenEvents || []).length;
+  const when = t => new Date(t * 1000).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const past = t => t * 1000 < Date.now();
+  return `<div class="section-title">Planned raids <span style="color:var(--text-dim);font-size:14px;letter-spacing:0.05em;">${list.length}</span>
+      <button class="ghost-btn" style="margin-left:10px;" onclick="loadPlannedRaids(true)" title="Re-read the Raid-Helper sign-ups on the server">↻</button></div>
+    ${_planned.error ? `<div class="warn-banner">Couldn't read Raid-Helper sign-ups: ${escHtml(_planned.error)}</div>` : ''}
+    ${list.length ? `<div class="planned-list">${list.map(e => `<div class="planned-row${past(e.startTime) ? ' past' : ''}">
+        <span class="planned-when">${when(e.startTime)}</span>
+        <a class="planned-title" href="https://raid-helper.xyz/raidplan/${e.id}" target="_blank" rel="noopener">${escHtml(e.title)} ↗</a>
+        <span class="iv-dim">${e.signUps} signed${e.leader ? ` · ${escHtml(e.leader)}` : ''}</span>
+        <span class="planned-actions"><button class="ghost-btn" onclick="hidePlannedRaid('${e.id}')" title="Not a raid we track — hide it">Hide</button>
+          <button class="small-gold-btn" onclick="startPlannedRaid('${e.id}')">START</button></span>
+      </div>`).join('')}</div>`
+      : _planned.error ? '' : `<div class="gl-empty">No Raid-Helper sign-ups from the last ${PLANNED_LOOKBACK_DAYS} days or upcoming that aren't already a raid here.</div>`}
+    ${nHidden ? `<div style="margin-top:4px;"><a class="subtle-link" onclick="unhidePlannedRaids()">Show ${nHidden} hidden</a></div>` : ''}`;
+}
+async function hidePlannedRaid(id) {
+  raidsData.hiddenEvents = [...new Set([...(raidsData.hiddenEvents || []), id])];
+  await saveRaids().catch(() => {}); renderRaidsPanel();
+}
+async function unhidePlannedRaids() {
+  raidsData.hiddenEvents = []; await saveRaids().catch(() => {}); renderRaidsPanel();
+}
+// Same as pasting the link into "Start a raid" and pressing START
+async function startPlannedRaid(id) {
+  const e = (_planned.events || []).find(x => x.id === id);
+  if (!confirm(`Start "${e?.title || id}" as a raid?`)) return;
+  const input = document.getElementById('nrRaidHelper'); if (!input) return;
+  for (const f of ['nrName', 'nrDate', 'nrSoftres']) { const el = document.getElementById(f); if (el) { el.value = ''; delete el.dataset.touched; } }
+  input.value = `https://raid-helper.xyz/raidplan/${id}`;
+  await previewRaidHelperLink();
+  if (!_nrRh.id) return flash("Couldn't read that Raid-Helper event", 'error');
+  await createRaid();
 }
 
 
@@ -6698,7 +5987,7 @@ function renderRulesPanel() {
       Nobody can end up below 0: if new rules mean someone spent more than they'd have earned, the extra is forgiven.</p>
     <div class="rule"><div class="rule-text"><b>Base SRs per raid attended</b><span>Every raider earns this for each raid they're present for.</span></div>
       <input id="ruPerRaid" type="number" min="0" step="1" class="gl-input rule-num" value="${r.perRaid}" oninput="rulesDirty()"></div>
-    <div class="rule"><div class="rule-text"><b>Buff bonus</b><span>+1 SR on a raid where the raider's buff score (from the CLA) is at or above the threshold. Added once the CLA is attached.</span></div>
+    <div class="rule"><div class="rule-text"><b>Consumes bonus</b><span>+1 SR on a raid where the raider's consumes score is at or above the threshold. The score comes from Warcraft Logs, checked against the <a class="subtle-link" onclick="setGrouping('consumes')">Consumable Rules</a> for their class and role; added once the raid's log has been read.</span></div>
       <div class="rule-ctl">${tog('ruBuffOn', r.buff.enabled)}<input id="ruBuffTh" type="number" min="0" max="100" class="gl-input rule-num" value="${r.buff.threshold}" oninput="rulesDirty()"><span>%</span></div></div>
     <div class="rule"><div class="rule-text"><b>Attendance streak bonus</b><span>+1 SR on every Nth raid in a row (N, 2N, 3N…). Missing a regular raid resets the streak; optional raids never break it but count when attended.</span></div>
       <div class="rule-ctl">${tog('ruStreakOn', r.streak.enabled)}<span>every</span><input id="ruStreakN" type="number" min="1" class="gl-input rule-num" value="${r.streak.every}" oninput="rulesDirty()"><span>raids</span></div></div>
@@ -6772,7 +6061,7 @@ function ivOpenItem(key) {
 function blpHoldersFor(itemKey) {
   if (!srRules.blp.enabled) return [];
   return Object.entries(derived().blp.losses).map(([pk, m]) => ({ pk, losses: m[itemKey] || 0 })).filter(x => x.losses > 0)
-    .map(x => ({ ...x, name: rosterPlayer(x.pk)?.name || canonicalNames?.[x.pk] || x.pk, roll: rollMax(x.losses) }))
+    .map(x => ({ ...x, name: rosterPlayer(x.pk)?.name || x.pk, roll: rollMax(x.losses) }))
     .sort((a, b) => b.roll - a.roll || a.name.localeCompare(b.name));
 }
 // One row per raid where the item was reserved or handed out, newest first
@@ -6894,13 +6183,13 @@ function itemDetailHtml(key) {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Roster page: AKAs (in each raider's dropdown) + the unrecognised-names inbox (bottom)
-// Every name seen in softres sheets, CLAs, the loot log and Gargul exports that doesn't
+// Every name seen in softres sheets, Warcraft Logs, the loot log and Gargul exports that doesn't
 // resolve to a raider lands in the inbox. Assigning it adds an AKA to that raider, which is
 // retroactive: past reserves, attendance and loot are re-attributed, so each change is
 // previewed (SR balances, raids, loot, bad luck items) before it's saved.
 // ═════════════════════════════════════════════════════════════════════════════
 let _rd = { focus: '', creating: '' };
-const RD_SOURCE_LABEL = { softres: 'Softres', cla: 'CLA', loot: 'Loot log', gargul: 'Gargul export', raidhelper: 'Raid-Helper' };
+const RD_SOURCE_LABEL = { softres: 'Softres', wcl: 'Warcraft Logs', loot: 'Loot log', gargul: 'Gargul export', raidhelper: 'Raid-Helper' };
 
 function openRaidersInbox(name) {
   _rd.focus = normalizeName(baseName(name || ''));
@@ -6930,7 +6219,7 @@ function akaEditorHtml(key) {
   const akas = (p.aliases || []).map(aliasValue).filter(Boolean);
   return `<div class="expand-section-title" style="margin-top:14px;">Also known as</div>
     <div class="rd-aliases">
-      ${akas.map((v, i) => `<span class="rd-alias" title="${isDiscordId(v) ? 'Discord ID' : 'Matches this name on softres, CLAs, the loot log and Gargul (realm suffixes ignored)'}">${isDiscordId(v) ? '<span class="rd-alias-type">Discord</span>' : ''}${escHtml(v)}<button class="x-btn" onclick="event.stopPropagation();rdRemoveAlias('${key}',${i})" title="Remove">✕</button></span>`).join('')}
+      ${akas.map((v, i) => `<span class="rd-alias" title="${isDiscordId(v) ? 'Discord ID' : 'Matches this name on softres, Warcraft Logs, the loot log and Gargul (realm suffixes ignored)'}">${isDiscordId(v) ? '<span class="rd-alias-type">Discord</span>' : ''}${escHtml(v)}<button class="x-btn" onclick="event.stopPropagation();rdRemoveAlias('${key}',${i})" title="Remove">✕</button></span>`).join('')}
       <span class="rd-add-alias"><input id="rdAv_${key}" class="gl-input" placeholder="Alt, spelling or Discord ID" onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter')rdAddAlias('${key}')"><button class="ghost-btn" onclick="event.stopPropagation();rdAddAlias('${key}')">Add</button></span>
     </div>`;
 }
@@ -6960,10 +6249,10 @@ function raidersInboxHtml() {
         <span class="iv-dim">If the name differs, “${escHtml(e.name)}” is kept as an AKA.</span></div></td></tr>` : ''}`).join('');
   return `<div class="sheet-card rd-inbox" id="rdInbox">
     <div class="gl-col-title">Unrecognised names ${inbox.length ? `<span class="nav-count">${inbox.length}</span>` : ''}</div>
-    <div class="iv-dim" style="margin-bottom:8px;">From softres sheets, CLAs, the loot log and Gargul exports. Assigning a name adds it to that raider's AKAs for every raid, past ones included — you'll see what changes before it's saved.</div>
+    <div class="iv-dim" style="margin-bottom:8px;">From softres sheets, Warcraft Logs, the loot log, Gargul exports and Raid-Helper. Assigning a name adds it to that raider's AKAs for every raid, past ones included — you'll see what changes before it's saved.</div>
     ${inbox.length ? `<div style="overflow-x:auto;"><table class="mini-table rd-table"><tbody>${rows}</tbody></table></div>` : '<div class="gl-empty">Every name matches a raider.</div>'}
     ${ignored.length ? `<details class="rd-ignored"><summary class="subtle-link">Ignored names (${ignored.length})</summary><div class="rd-aliases" style="margin-top:8px;">
-      ${ignored.map((n, i) => `<span class="rd-alias">${escHtml(canonicalNames[n] || n)}<button class="x-btn" onclick="rdUnignore(${i})" title="Stop ignoring">↩</button></span>`).join('')}</div></details>` : ''}
+      ${ignored.map((n, i) => `<span class="rd-alias">${escHtml(n)}<button class="x-btn" onclick="rdUnignore(${i})" title="Stop ignoring">↩</button></span>`).join('')}</div></details>` : ''}
   </div>`;
 }
 // Called after the Roster page is drawn: autocompletes + scroll to a focused name
@@ -7062,6 +6351,282 @@ async function rdRemoveAlias(playerKey, i) {
   await _rdCommit(() => rosterPlayer(playerKey).aliases.splice(i, 1), `Removed “${v}” from ${p.name}`, p.name);
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Consumables: rules (per Class + Role), scoring from Warcraft Logs, the raid Consumes tab
+// (officers), the Consumable Rules page, and the automatic log sync.
+//
+// consume-rules.json = { combos: { 'Warrior|Tanks': { groups: [{ id, name, ids: [abilityId|'we:…'] }] } } }
+// A group is met on a boss fight when the raider had ANY of its buffs during that fight.
+// Score = average over the combo's groups of "% of the raider's boss kills where the group was met"
+// (all of their boss fights if the night had no kills). No rules for the combo → no score.
+// ═════════════════════════════════════════════════════════════════════════════
+
+let consumeRules = { combos: {} };
+const _consMemo = new Map();
+const comboKey = (cls, role) => `${cls}|${role}`;
+
+async function loadConsumeRulesFromRepo() {
+  try {
+    const d = await fetchFromWorker('consume-rules.json');
+    if (d && d.combos) consumeRules = d;
+  } catch (e) { addError('consume-rules.json', e.message); }
+}
+async function saveConsumeRules() {
+  invalidateDerived();
+  try { await saveJsonToGitHub('consume-rules.json', consumeRules); }
+  catch (e) { handleSaveError(e, 'consume-rules.json'); throw e; }
+}
+function consumableRuleIds() {
+  const s = new Set();
+  for (const c of Object.values(consumeRules.combos || {})) for (const g of c.groups || []) for (const id of g.ids || []) s.add(String(id));
+  return s;
+}
+function consumeGroupsFor(key) {
+  const p = rosterPlayer(key);
+  return p ? consumeRules.combos?.[comboKey(p.class, p.role)]?.groups || [] : [];
+}
+// Every buff name seen in any stored log (plus the built-in list), id → name
+function consumableCatalog() {
+  if (_consMemo.has('catalog')) return _consMemo.get('catalog');
+  const out = { ...WCL_CONSUMABLES };
+  for (const r of raidsData.raids) Object.assign(out, r.wcl?.abilities || {});
+  _consMemo.set('catalog', out);
+  return out;
+}
+
+function _killMask(raid) {
+  const f = raid.wcl?.fights || [];
+  let m = 0; f.forEach((x, i) => { if (x.kill) m += 2 ** i; });
+  return m || (2 ** f.length - 1);
+}
+// { pct, groups: [{ name, pct }] } — or null (no log for them, or no rules for their class + role)
+function consumeScore(raid, key) {
+  const mk = 'cs|' + raid.id + '|' + key;
+  if (_consMemo.has(mk)) return _consMemo.get(mk);
+  let res = null;
+  const p = raidWclPlayer(raid, key), groups = consumeGroupsFor(key).filter(g => g.ids?.length);
+  if (p && groups.length) {
+    const denom = _and(p.f, _killMask(raid)) || p.f, n = _bits(denom);
+    if (n) {
+      const gs = groups.map(g => {
+        let m = 0; for (const id of g.ids) m = _or(m, p.b[id] || 0);
+        return { name: g.name, pct: Math.round(100 * _bits(_and(m, denom)) / n) };
+      });
+      res = { pct: Math.round(gs.reduce((a, g) => a + g.pct, 0) / gs.length), groups: gs, fights: n };
+    }
+  }
+  _consMemo.set(mk, res);
+  return res;
+}
+// { date: pct } for the overview dots and averages
+function rawBuffScoresByDate(playerName) {
+  const k = normalizeName(playerName), mk = 'bd|' + k;
+  if (_consMemo.has(mk)) return _consMemo.get(mk);
+  const out = {};
+  for (const r of raidsData.raids) { const s = consumeScore(r, k); if (s) out[r.date] = s.pct; }
+  _consMemo.set(mk, out);
+  return out;
+}
+
+// What each Class + Role actually used in recent logs: { combo: [{ id, name, users, avg }] }
+function consumeUsageByCombo(maxRaids = 8) {
+  if (_consMemo.has('usage')) return _consMemo.get('usage');
+  const raids = sortedRaids().filter(r => Object.keys(r.wcl?.players || {}).length).slice(-maxRaids);
+  const acc = {}, seen = {};
+  for (const r of raids) for (const p of Object.values(r.wcl.players)) {
+    const k = resolveRosterKey(p.name), rp = k && rosterPlayer(k); if (!rp || !_bits(p.f)) continue;
+    const ck = comboKey(rp.class, rp.role);
+    (seen[ck] ||= new Set()).add(k);
+    for (const id of Object.keys(p.b)) {
+      const a = ((acc[ck] ||= {})[id] ||= { users: new Set(), pcts: [] });
+      a.users.add(k); a.pcts.push(wclBuffPct(p, id));
+    }
+  }
+  const cat = consumableCatalog(), out = {};
+  for (const [ck, ids] of Object.entries(acc)) out[ck] = Object.entries(ids).map(([id, a]) => ({ id, name: wclAbilityName(id, { wcl: { abilities: cat } }),
+    users: a.users.size, of: seen[ck].size, avg: Math.round(a.pcts.reduce((x, y) => x + y, 0) / a.pcts.length) }))
+    .sort((a, b) => b.users - a.users || b.avg - a.avg || a.name.localeCompare(b.name));
+  _consMemo.set('usage', out);
+  return out;
+}
+
+// ── Gear on the newest log (replaces the CLA gear listing) ──
+function rebuildGearListing() {
+  gearListingByPlayer = {};
+  const newest = sortedRaids().filter(r => Object.values(r.wcl?.players || {}).some(p => p.g)).pop();
+  for (const p of Object.values(newest?.wcl?.players || {})) {
+    const k = resolveRosterKey(p.name); if (!k || !p.g) continue;
+    gearListingByPlayer[k] = { slots: Object.fromEntries(Object.entries(p.g).map(([sl, id]) => [sl, 'id:' + id])) };
+  }
+}
+
+// ── Automatic sync (officers) ──
+// Past raids without a log yet (last 30 days), raids whose log may still have been uploading,
+// and nights where nothing was found — retried every 30 minutes for a week.
+function _wclDue(r) {
+  if (r.wcl?.demo || r.status !== 'past') return false;
+  if (!WCL_GUILD?.name && !r.wcl?.manual) return false;
+  const age = Date.now() - new Date(r.date + 'T12:00:00').getTime(), DAY = 864e5;
+  const last = new Date(r.wcl?.errorAt || r.wcl?.syncedAt || 0).getTime(), stale = Date.now() - last > 30 * 60e3;
+  if (!r.wcl) return age < 30 * DAY;
+  if (r.wcl.none || r.wcl.error) return stale && age < 7 * DAY;
+  if (r.wcl.manual) return false;
+  const ended = new Date(r.endedAt || r.date + 'T12:00:00').getTime();
+  return stale && last - ended < 6 * 3600e3 && age < 7 * DAY; // last read soon after the raid → read once more
+}
+async function wclAutoSync() {
+  if (!writeToken || !CF_WORKER_URL) return false;
+  const due = pastRaids().filter(_wclDue).slice(-4);
+  let changed = false;
+  for (const r of due) {
+    try { await syncWcl(r); changed = true; }
+    catch (e) { changed = true; fetchErrors.push({ source: `Warcraft Logs (${r.name}, ${r.date})`, message: e.message, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }); }
+  }
+  return changed;
+}
+async function refreshWcl(raidId, refs) {
+  const raid = getRaid(raidId);
+  flash('Reading Warcraft Logs…', 'loading');
+  try {
+    await syncWcl(raid, refs);
+    await saveRaids().catch(() => {});
+    const n = Object.keys(raid.wcl.players).length;
+    flash(raid.wcl.none ? 'No Warcraft Logs report found for this night yet' : `Warcraft Logs read — ${n} in the log`, raid.wcl.none ? 'loading' : 'success');
+  } catch (e) { await saveRaids().catch(() => {}); flash('Warcraft Logs: ' + e.message, 'error'); }
+  rebuildGearListing(); refreshAll();
+}
+function useWclLink(raidId, inputId) {
+  const raw = document.getElementById(inputId)?.value || '';
+  const refs = raw.split(/[\s,]+/).filter(Boolean).map(wclParseUrl);
+  if (!refs.length || refs.some(x => !x)) return flash('Paste Warcraft Logs report links (…warcraftlogs.com/reports/…)', 'error');
+  refreshWcl(raidId, refs);
+}
+async function useWclAutomatic(raidId) {
+  const raid = getRaid(raidId);
+  if (raid.wcl) raid.wcl.manual = false;
+  if (!WCL_GUILD?.name) { flash('Set wcl_guild_name in config.json to match logs automatically', 'error'); return; }
+  raid.wcl = null;
+  await refreshWcl(raidId);
+}
+
+// One line in the raid header: which log(s) the raid uses
+function wclLineHtml(raid) {
+  const w = raid.wcl;
+  if (!w && (raid.status === 'active' || !writeToken)) return '';
+  const reps = w?.reports || [], n = Object.keys(w?.players || {}).length;
+  const refresh = writeToken && !w?.demo ? `<button class="ghost-btn write-gated-hide" onclick="refreshWcl('${raid.id}')" title="Read the log again">↻</button>` : '';
+  let body;
+  if (!w) body = '<span class="iv-dim">not read yet</span>';
+  else if (w.error && !reps.length) body = `<span style="color:${C5};" title="${escHtml(w.error)}">⚠ couldn't read the log</span>`;
+  else if (!reps.length) body = '<span class="iv-dim">no report found for this night yet</span>';
+  else body = reps.map(r => w.demo ? `<span class="rh-link">${escHtml(r.title)}</span>` : `<a class="rh-link" href="${escHtml(wclReportUrl(r))}" target="_blank" rel="noopener">${escHtml(r.title || r.code)} ↗</a>`).join(' + ')
+    + ` <span class="rh-counts">${n} in the log</span>`;
+  const how = w?.demo ? 'demo log' : w?.manual ? 'report pasted by hand' : w ? 'matched automatically' : '';
+  return `<div class="rh-line"><span class="wcl-tag">Warcraft Logs</span> ${body}
+    ${how ? `<span class="iv-dim">${how}${w?.syncedAt && !w.demo ? ` · read ${fmtAgo(w.syncedAt)}` : ''}${w?.error && reps.length ? ` · <span style="color:${C5};" title="${escHtml(w.error)}">last read failed</span>` : ''}</span>` : ''}
+    ${refresh}${writeToken ? `<a class="subtle-link" onclick="setRaidSub('consumes')">consumes →</a>` : ''}</div>`;
+}
+
+// ── Raid → Consumes tab (officers) ──
+function renderRaidConsumes(el, raid) {
+  const w = raid.wcl, cat = { wcl: { abilities: consumableCatalog() } };
+  const override = `<div class="cons-src write-gated-hide">
+      <input id="wclLink" class="gl-input" placeholder="Use a specific Warcraft Logs report — paste its link (several: separate with spaces)" value="${w?.manual ? escHtml((w.reports || []).map(wclReportUrl).join(' ')) : ''}">
+      <button class="small-gold-btn" onclick="useWclLink('${raid.id}','wclLink')">USE REPORT</button>
+      ${w?.manual ? `<button class="ghost-btn" onclick="useWclAutomatic('${raid.id}')">Back to automatic</button>` : ''}
+    </div>`;
+  if (!w || !Object.keys(w.players || {}).length) {
+    el.innerHTML = `<div class="gl-empty">${raid.status === 'active' ? 'The log is read when the raid ends.' : w?.error ? `Couldn't read the log: ${escHtml(w.error)}` : w ? 'No Warcraft Logs report found for this night yet — it is checked again automatically, or paste the link below.' : 'Not read yet.'}</div>${w?.demo ? '' : override}`;
+    return;
+  }
+  const kills = (w.fights || []).filter(f => f.kill).length;
+  const ruleIds = id => new Set(consumeGroupsFor(id).flatMap(g => g.ids.map(String)));
+  const rows = Object.values(w.players).map(p => ({ p, key: resolveRosterKey(p.name) })).map(x => ({ ...x, rp: x.key && rosterPlayer(x.key) }))
+    .map(x => ({ ...x, score: x.rp ? consumeScore(raid, x.key) : null }))
+    .sort((a, b) => (!!b.rp - !!a.rp) || ((a.score?.pct ?? 101) - (b.score?.pct ?? 101)) || a.p.name.localeCompare(b.p.name));
+  const pctCls = v => v >= srRules.buff.threshold ? 'ok' : v >= srRules.buff.threshold - 25 ? 'mid' : 'low';
+  const row = ({ p, key, rp, score }) => {
+    const mine = rp ? ruleIds(key) : new Set();
+    const det = Object.keys(p.b).filter(id => id !== WCL_WE_ANY || !Object.keys(p.b).some(x => x.startsWith('we:') && x !== WCL_WE_ANY))
+      .map(id => ({ id, pct: wclBuffPct(p, id) })).sort((a, b) => mine.has(b.id) - mine.has(a.id) || b.pct - a.pct);
+    return `<tr class="${rp ? '' : 'cons-unknown'}">
+      <td>${rp ? playerNameHtml(rp.name) : `${escHtml(p.name)} <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(p.name)}')">not on roster</a>`}<div class="iv-dim cons-sub">${escHtml(rp ? `${rp.class} · ${rp.role}` : p.cls)} · ${_bits(p.f)} boss fight${_bits(p.f) === 1 ? '' : 's'}</div></td>
+      <td class="cons-score">${score ? `<b class="cons-pct ${pctCls(score.pct)}">${score.pct}%</b>` : `<span class="iv-dim" title="${rp ? 'No consumable rules for ' + escHtml(rp.class + ' · ' + rp.role) : ''}">—</span>`}</td>
+      <td>${score ? score.groups.map(g => `<span class="cons-grp ${pctCls(g.pct)}">${escHtml(g.name)} ${g.pct}%</span>`).join('') : rp ? `<a class="subtle-link" onclick="openConsumeRules('${jsAttr(comboKey(rp.class, rp.role))}')">set rules for ${escHtml(rp.class)} · ${escHtml(rp.role)}</a>` : ''}</td>
+      <td class="cons-det">${det.map(d => `<span class="cons-chip${mine.has(d.id) ? ' req' : ''}" title="${escHtml(String(d.id))}">${escHtml(wclAbilityName(d.id, cat))} <b>${d.pct}%</b></span>`).join('') || '<span class="iv-dim">nothing detected</span>'}</td>
+    </tr>`;
+  };
+  el.innerHTML = `
+    <div class="cons-head">
+      <span>Score = average of the raider's consumable groups, each the % of their boss kills where they had at least one item from the group${kills ? '' : ' (no kills this night, so every boss pull counts)'}. At or above <b>${srRules.buff.threshold}%</b> earns the consumes bonus${srRules.buff.enabled ? '' : ' (turned off in SR Rules)'}.</span>
+      <a class="subtle-link" onclick="openConsumeRules()">Consumable Rules →</a>
+    </div>
+    <div class="cons-note iv-dim">Detected: % of their boss fights with that buff at any point. A buff taken before logging started and still running when it ended leaves no trace in the log — start logging before people buff.</div>
+    <div style="overflow-x:auto;"><table class="mini-table cons-table"><thead><tr><th>Raider</th><th>Score</th><th>Groups</th><th>Detected</th></tr></thead>
+      <tbody>${rows.map(row).join('')}</tbody></table></div>
+    ${w.demo ? '' : override}`;
+}
+
+// ── Management → Consumable Rules ──
+let _crDraft = null, _crOpen = null;
+function openConsumeRules(combo) { _crOpen = combo || null; setGrouping('consumes'); }
+function renderConsumesPanel() {
+  const panel = document.getElementById('consumesPanel'); if (!panel) return;
+  if (!_crDraft) _crDraft = JSON.parse(JSON.stringify(consumeRules.combos ? consumeRules : { combos: {} }));
+  const usage = consumeUsageByCombo(), cat = consumableCatalog();
+  const raiders = {};
+  for (const p of rosterData.players) if (!rosterData.excluded?.includes(p.name) && p.class && p.role) (raiders[comboKey(p.class, p.role)] ||= []).push(p.name);
+  const combos = [...new Set([...Object.keys(raiders), ...Object.keys(_crDraft.combos)])]
+    .sort((a, b) => ROLE_ORDER.indexOf(a.split('|')[1]) - ROLE_ORDER.indexOf(b.split('|')[1]) || a.localeCompare(b));
+  const nm = id => wclAbilityName(id, { wcl: { abilities: cat } });
+  const comboHtml = ck => {
+    const [cls, role] = ck.split('|'), c = _crDraft.combos[ck] || { groups: [] }, u = usage[ck] || [];
+    const others = Object.entries(cat).filter(([id]) => !u.some(x => x.id === id)).sort((a, b) => a[1].localeCompare(b[1]));
+    const addSel = gi => `<select class="gl-input cr-add" onchange="crAddBuff('${jsAttr(ck)}',${gi},this.value)"><option value="">+ add a consumable…</option>
+        ${u.length ? `<optgroup label="Used by ${escHtml(cls)} · ${escHtml(role)} in recent logs">${u.map(x => `<option value="${escHtml(x.id)}">${escHtml(x.name)} — ${x.users}/${x.of} raider${x.of === 1 ? '' : 's'}, ${x.avg}% of fights</option>`).join('')}</optgroup>` : ''}
+        <optgroup label="Seen in other logs">${[[WCL_WE_ANY, nm(WCL_WE_ANY)], ...others].map(([id, n]) => `<option value="${escHtml(id)}">${escHtml(n)}</option>`).join('')}</optgroup></select>`;
+    return `<details class="cr-combo" ${_crOpen === ck ? 'open' : ''} data-combo="${escHtml(ck)}" ontoggle="if(this.open)_crOpen=this.dataset.combo">
+      <summary><span class="rh-arrow">▸</span><b style="color:${CLASS_COLORS[cls] || 'var(--text)'};">${escHtml(cls)}</b> <span class="iv-dim">· ${escHtml(role)}</span>
+        <span class="cr-sum">${c.groups.length ? c.groups.map(g => escHtml(g.name)).join(' · ') : '<i>no requirements — no consumes score</i>'}</span>
+        <span class="iv-dim cr-n">${(raiders[ck] || []).length} raider${(raiders[ck] || []).length === 1 ? '' : 's'}</span></summary>
+      <div class="cr-body">
+        ${c.groups.map((g, gi) => `<div class="cr-group">
+          <div class="cr-ghead"><input class="gl-input cr-gname" value="${escHtml(g.name)}" oninput="crRenameGroup('${jsAttr(ck)}',${gi},this.value)" placeholder="Group name, e.g. Flask or elixir">
+            <span class="iv-dim">at least one of:</span><button class="x-btn" onclick="crRemoveGroup('${jsAttr(ck)}',${gi})" title="Remove group">✕</button></div>
+          <div class="cr-chips">${g.ids.map((id, ii) => `<span class="cons-chip req" title="${escHtml(String(id))}">${escHtml(nm(id))}<button class="x-btn" onclick="crRemoveBuff('${jsAttr(ck)}',${gi},${ii})" title="Remove">✕</button></span>`).join('') || '<span class="iv-dim">empty — add at least one consumable</span>'}</div>
+          ${addSel(gi)}
+        </div>`).join('')}
+        <div class="cr-actions"><button class="ghost-btn" onclick="crAddGroup('${jsAttr(ck)}')">+ Add group</button>
+          <select class="gl-input cr-copy" onchange="crCopyFrom('${jsAttr(ck)}',this.value)"><option value="">Copy from…</option>${combos.filter(x => x !== ck && _crDraft.combos[x]?.groups?.length).map(x => `<option value="${escHtml(x)}">${escHtml(x.replace('|', ' · '))}</option>`).join('')}</select></div>
+      </div></details>`;
+  };
+  panel.innerHTML = `<div class="rules">
+    <div class="section-title">Consumable Rules</div>
+    <p class="rules-intro">Requirements per class and role, checked against Warcraft Logs. Each group is met on a boss kill when the raider had <b>at least one</b> of its consumables;
+      their consumes score is the average of their groups. The SR bonus threshold is on the <a class="subtle-link" onclick="setGrouping('rules')">SR Rules</a> page (${srRules.buff.enabled ? `${srRules.buff.threshold}%` : 'off'}).
+      Changes apply to every raid, past ones included.</p>
+    ${combos.map(comboHtml).join('') || '<div class="gl-empty">No raiders on the roster yet.</div>'}
+    <div style="display:flex;gap:8px;margin-top:18px;" class="write-gated-hide">
+      <button id="crSave" class="gloss-btn-saveable small-gold-btn" onclick="crSave()">SAVE RULES</button>
+      <button class="ghost-btn" onclick="_crDraft=null;renderConsumesPanel()">Discard changes</button>
+    </div></div>`;
+}
+function _crc(ck) { return (_crDraft.combos[ck] ||= { groups: [] }); }
+function _crChanged(ck) { _crOpen = ck; renderConsumesPanel(); document.getElementById('crSave')?.classList.add('gloss-btn-ready'); }
+function crAddGroup(ck) { _crc(ck).groups.push({ id: _uid('g_'), name: 'New group', ids: [] }); _crChanged(ck); }
+function crRemoveGroup(ck, gi) { _crc(ck).groups.splice(gi, 1); _crChanged(ck); }
+function crRenameGroup(ck, gi, v) { _crc(ck).groups[gi].name = v; document.getElementById('crSave')?.classList.add('gloss-btn-ready'); }
+function crAddBuff(ck, gi, id) { if (!id) return; const g = _crc(ck).groups[gi]; if (!g.ids.map(String).includes(String(id))) g.ids.push(/^\d+$/.test(id) ? +id : id); _crChanged(ck); }
+function crRemoveBuff(ck, gi, ii) { _crc(ck).groups[gi].ids.splice(ii, 1); _crChanged(ck); }
+function crCopyFrom(ck, from) { if (!from) return; _crDraft.combos[ck] = JSON.parse(JSON.stringify(_crDraft.combos[from])); _crDraft.combos[ck].groups.forEach(g => { g.id = _uid('g_'); }); _crChanged(ck); }
+async function crSave() {
+  for (const c of Object.values(_crDraft.combos)) c.groups = c.groups.filter(g => g.ids.length).map(g => ({ ...g, name: g.name.trim() || 'Group' }));
+  for (const [k, c] of Object.entries(_crDraft.combos)) if (!c.groups.length) delete _crDraft.combos[k];
+  consumeRules = JSON.parse(JSON.stringify(_crDraft));
+  try { await saveConsumeRules(); flash('Consumable rules saved', 'success'); } catch (_) { /* handled */ }
+  _crDraft = null; refreshAll();
+}
+
 
 // Molten Core item table as softres.it serves it (captured 2026-09-26), trimmed to
 // [id, name, from, classRestriction[], sharedBosses[], slot, quality]. Used ONLY by
@@ -7091,7 +6656,7 @@ async function _putWf(filename, data) {
   });
   if (!res.ok) throw new Error(`write ${_kvKey(filename)}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
 }
-const WF_KEYS = ['raids.json', 'roster.json', 'glossary.json', 'sr-rules.json', 'cla-sheets.json'];
+const WF_KEYS = ['raids.json', 'roster.json', 'glossary.json', 'sr-rules.json', 'consume-rules.json'];
 
 function _raidArg(x) {
   if (!x) return activeRaids().slice(-1)[0] || sortedRaids().slice(-1)[0];
@@ -7111,7 +6676,7 @@ const wfDebug = {
     console.log(`%cWF dashboard debug tools`, 'font-weight:bold;font-size:16px;');
     console.table({
       'wfDebug.state()':            'counts + config + rules at a glance',
-      'wfDebug.raids()':            'every raid: id, date, status, sheets, loot, CLA',
+      'wfDebug.raids()':            'every raid: id, date, status, sheets, loot, Warcraft Logs',
       'wfDebug.raid(x)':            'full raid object (x = id, date, or part of the name; default latest)',
       'wfDebug.attendance(x)':      'who counts as present on raid x, and why (source)',
       'wfDebug.reserves(x)':        'effective reserves on raid x (synced + manual edits)',
@@ -7143,14 +6708,14 @@ const wfDebug = {
       worker: CF_WORKER_URL, kvPrefix: KV_PREFIX, writeAccess: !!writeToken,
       raiders: rosterData.players.length, raids: raidsData.raids.length, active: activeRaids().map(r => `${r.date} ${r.name}`),
       glossaryRaids: Object.keys(glossary.raids).length, glossaryItems: Object.keys(glossary.items).length,
-      claSheets: claSheets.length, claCached: Object.keys(_claStoredParsed).length, rules: srRules,
+      logs: raidsData.raids.filter(r => Object.keys(r.wcl?.players || {}).length).length, consumeCombos: Object.keys(consumeRules.combos || {}).length, rules: srRules,
     };
     console.log(s); return s;
   },
   raids() {
     const rows = sortedRaids().map(r => ({ id: r.id, date: r.date, name: r.name, status: r.status, optional: r.optional,
       sheets: r.softres.map(s => s.code + (s.syncError ? ' ⚠' : '')).join(', '), reservers: Object.keys(raidReserves(r)).length,
-      loot: r.loot.length, cla: r.claLabel || '', overrides: Object.keys(r.attendance.overrides).length }));
+      loot: r.loot.length, logs: (r.wcl?.reports || []).map(x => x.code).join(' ') || (r.wcl?.none ? 'none found' : ''), overrides: Object.keys(r.attendance.overrides).length }));
     console.table(rows); return rows;
   },
   raid(x) { const r = _raidArg(x); console.log(r); return r; },
@@ -7201,8 +6766,8 @@ const wfDebug = {
           for (const id of e.items) if (!glossary.items[itemKeyFor(id)]) issues.push(`${r.date}: reserved item ${id} not in glossary`);
         }
       }
-      if (r.claLabel && !claSheets.some(c => c.label === r.claLabel)) issues.push(`${r.date}: CLA ${r.claLabel} referenced but no sheet stored (baked presence: ${r.attendance.cla.length})`);
-      if (r.status === 'active' && r.date < todayMST()) issues.push(`${r.date}: "${r.name}" is still ACTIVE — End Raid or attach the CLA`);
+      if (r.status === 'past' && !r.wcl?.demo && (!r.wcl || r.wcl.none)) issues.push(`${r.date}: no Warcraft Logs report read yet`);
+      if (r.status === 'active' && r.date < todayMST()) issues.push(`${r.date}: "${r.name}" is still ACTIVE — End Raid`);
     }
     for (const s of Object.values(derived().ledger)) for (const e of s.activeOver) issues.push(`${s.name} over-reserved on ${e.name} (${e.reserved} reserved)`);
     if (!issues.length) console.log('✓ No issues found'); else console.warn(issues.length + ' issue(s):\n' + issues.join('\n'));
@@ -7247,13 +6812,12 @@ window.wfDebug = wfDebug;
 async function wipeAllData(confirmPhrase) {
   if (confirmPhrase !== 'DELETE EVERYTHING') { console.error('Refusing. Call wipeAllData("DELETE EVERYTHING") — this empties every wf/* key.'); return; }
   if (!writeToken) { console.error('Save the write token first.'); return; }
-  if (!confirm(`Really empty ALL WoW Forever data under "${KV_PREFIX}" (raids, roster, glossary, rules, CLA)?\n\nTip: run await wfDebug.backup() first. The LC dashboard is not touched.`)) return;
+  if (!confirm(`Really empty ALL WoW Forever data under "${KV_PREFIX}" (raids, roster, glossary, SR + consumable rules)?\n\nTip: run await wfDebug.backup() first. The LC dashboard is not touched.`)) return;
   await _putWf('raids.json', { raids: [] });
   await _putWf('roster.json', { players: [], excluded: [] });
   await _putWf('glossary.json', { raids: {}, items: {}, imported: {} });
   await _putWf('sr-rules.json', DEFAULT_SR_RULES);
-  await _putWf('cla-sheets.json', { sheets: [], parsed: {} });
-  try { sessionStorage.removeItem(STORAGE_NS + 'claSheets'); } catch(_) {}
+  await _putWf('consume-rules.json', { combos: {} });
   console.log('Wiped. Reloading…'); setTimeout(() => location.reload(), 600);
 }
 window.wipeAllData = wipeAllData;
@@ -7307,20 +6871,20 @@ function demoGearFor(p, wonKeys) {
     let pickK = mine[mine.length - 1];
     if (!pickK) for (const t of [...pref, '']) { const c = cands.filter(k => (glossary.items[k].armorType || '') === t); if (c.length) { pickK = choose(c); break; } }
     if (!pickK) pickK = choose(cands);
-    if (pickK) out[gearSlot] = glossary.items[pickK].name;
+    if (pickK) out[gearSlot] = pickK;
   }
   for (const [slot, a, b] of [['Finger', 'Ring1', 'Ring2'], ['Trinket', 'Trinket1', 'Trinket2']]) {
     const cands = mcKeys.filter(k => glossary.items[k].slot === slot && canWear(k));
     const mine = wonKeys.filter(k => cands.includes(k));
     const picked = [...new Set([...mine.reverse(), choose(cands), cands[(h + 1) % Math.max(1, cands.length)]].filter(Boolean))].slice(0, 2);
-    if (picked[0]) out[a] = glossary.items[picked[0]].name;
-    if (picked[1]) out[b] = glossary.items[picked[1]].name;
+    if (picked[0]) out[a] = picked[0];
+    if (picked[1]) out[b] = picked[1];
   }
   const w = DEMO_WEAPONS[demoWeaponKind(p)];
   const set = choose(w.sets) || [];
-  if (set[0]) out['Weapon'] = itemName('id:' + set[0]);
-  if (set[1]) out['Off-Hand'] = itemName('id:' + set[1]);
-  const rng = choose(w.ranged); if (rng) out['Wand/Idol/Relic etc.'] = itemName('id:' + rng);
+  if (set[0]) out['Weapon'] = 'id:' + set[0];
+  if (set[1]) out['Off-Hand'] = 'id:' + set[1];
+  const rng = choose(w.ranged); if (rng) out['Wand/Idol/Relic etc.'] = 'id:' + rng;
   return out;
 }
 
@@ -7432,7 +6996,7 @@ function buildDemoFixture({ base = [], gone = [], seed: seedIn = 20261006 } = {}
         if (to) { (owned[to] ||= new Set()).add(ik); if (wants[to]) wants[to] = wants[to].filter(x => x !== ik); }
       }
     });
-    // CLA consumable scores (raid 4 ends without a CLA → attendance falls back to the reserves)
+    // `cla` (legacy fixture field) = this night has a log; raid 4 has none → attendance falls back to the reserves
     let cla = null;
     if (!noCla) { cla = {}; for (const n of present) { const e = rnd() < 0.8 ? 100 : 50, f = rnd() < 0.8 ? 100 : 0, w = rnd() < 0.6 ? 100 : 0; cla[n] = [e, f, w, rnd() < 0.5 ? 100 : 0]; } }
     return { key: 'r' + (i + 1), name: optional ? 'Molten Core (optional reclear)' : 'Molten Core', date, optional, present, reserves, loot, cla };
@@ -7465,7 +7029,7 @@ function _demoGlossaryMC() {
 }
 
 const DEMO_BUNZIE = { name: 'Bunzie Ashveil', role: 'Healers', class: 'Priest' };
-function addDemoBunzie(fx, players, raids, parsed) {
+function addDemoBunzie(fx, players, raids) {
   if (players.some(p => normalizeName(p.name) === normalizeName(DEMO_BUNZIE.name))) return null;
   players.push({ ...DEMO_BUNZIE, isAlt: false });
   const key = normalizeName(DEMO_BUNZIE.name), first = DEMO_BUNZIE.name.split(' ')[0];
@@ -7478,12 +7042,7 @@ function addDemoBunzie(fx, players, raids, parsed) {
   fx.raids.forEach((r, i) => {
     const raid = raids[i];
     raid.softres[0].edits[key] = { name: first, items: [chase] };
-    if (r.cla) {
-      raid.attendance.cla.push(key);
-      const p = parsed[r.date];
-      p.claPresence.push(key);
-      p.buffScores[key] = { [r.date]: { total: 100, scrolls: 0, elixir: 100, food: 100, wepOil: 100 } };
-    }
+    if (r.cla) demoWclAdd(raid, DEMO_BUNZIE, 1); // never misses a consumable
   });
   // Tonight: double reserve on the chase item (big bonus) + the item Bunzypoo reserved (no bonus for Bunzie)
   return open => { if (open) open.softres[0].edits[key] = { name: first, items: [chase, chase, shared] }; };
@@ -7526,7 +7085,87 @@ function demoRaidHelper(fx, players, raid) {
     signUps, comp: { slots, groups: Array.from({ length: 8 }, (_, i) => ({ name: `Group ${i + 1}`, position: i + 1 })) }, syncedAt: new Date().toISOString(), syncError: null };
 }
 
-// Write the fixture into this dashboard's storage (roster, raids, CLAs, glossary). Never calls softres.
+
+// ── Fake Warcraft Logs for the demo ──────────────────────────────────────────
+// Usage patterns extrapolated from a real Molten Core log (vanilla report KDHzF1qNhaAGy8Z6):
+// which consumables each class + role reached for. That log was a 22-minute speedrun, so
+// hour-long elixirs drunk before it started barely show; a normal 2–3 hour night would show
+// them on most bosses, which is what these numbers assume.
+// Entry: [abilityId, chance the raider uses it at all, share of boss fights it's up when they do]
+const DEMO_MC_BOSSES = ['Lucifron', 'Magmadar', 'Gehennas', 'Garr', 'Shazzrah', 'Baron Geddon', 'Sulfuron Harbinger', 'Golemagg the Incinerator', 'Majordomo Executus', 'Ragnaros'];
+const DEMO_BUFF_NAMES = {
+  17538: 'Elixir of the Mongoose', 11405: 'Elixir of the Giants', 17539: 'Greater Arcane Elixir', 11390: 'Arcane Elixir', 11474: 'Shadow Power',
+  26276: 'Greater Firepower', 7844: 'Fire Power', 21920: 'Frost Power', 11348: 'Greater Armor', 3593: 'Elixir of Fortitude', 3223: "Major Troll's Blood Elixir",
+  11371: 'Gift of Arthas', 17626: 'Flask of the Titans', 17627: 'Distilled Wisdom', 17628: 'Supreme Power', 24363: 'Mageblood Potion',
+  18125: 'Blessed Sunfruit', 18192: 'Well Fed (Grilled Squid)', 24799: 'Well Fed (Smoked Desert Dumplings)', 22730: 'Well Fed (Runn Tum Tuber Surprise)',
+  18194: 'Mana Regeneration (Nightfin Soup)', 25661: "Well Fed (Dirge's Chimaerok Chops)", 17038: 'Winterfall Firewater', 25804: 'Rumsey Rum Black Label',
+  17528: 'Mighty Rage', 6615: 'Free Action', 17543: 'Fire Protection', 11359: 'Restoration', 3169: 'Invulnerability', 5665: 'Fury of the Bogling', 10668: 'Spirit of Boar',
+};
+const DEMO_CONSUME_PROFILES = {
+  'Warrior|Tanks':        [[3593, .85, .9], [11348, .5, .8], [11371, .45, .8], [17538, .7, .85], [3223, .4, .7], [17626, .3, .9], [24799, .7, .85], [25661, .3, .9], [25804, .5, .7], ['we:2506', .95, .97], [6615, .35, .2], [17543, .5, .3], [11359, .3, .2]],
+  'Warrior|Physical DPS': [[17538, .85, .85], [11405, .6, .8], [17038, .7, .8], [18125, .5, .8], [24799, .45, .85], [25804, .5, .7], ['we:2506', .95, .97], [17528, .8, .3], [6615, .45, .15], [11359, .5, .3], [17543, .35, .3], [3169, .35, .1], [5665, .3, .7]],
+  'Rogue|Physical DPS':   [[17538, .85, .85], [17038, .6, .8], [18192, .7, .85], ['we:625', .95, .97], ['we:1643', .7, .9], [5665, .6, .8], [11359, .4, .3], [25804, .4, .7], [6615, .3, .2]],
+  'Hunter|Ranged DPS':    [[17538, .8, .85], [18192, .65, .85], [3223, .3, .7], [25804, .4, .7], [17543, .3, .3]],
+  'Mage|Ranged DPS':      [[17539, .85, .85], [17628, .3, .9], [26276, .5, .85], [21920, .3, .85], ['we:2628', .8, .95], [22730, .6, .85], [17543, .4, .3], [25804, .3, .7]],
+  'Warlock|Ranged DPS':   [[17539, .85, .85], [11474, .7, .85], [17628, .3, .9], ['we:2628', .8, .95], [22730, .6, .85], [17543, .4, .3], [25804, .3, .7]],
+  'Priest|Healers':       [[18194, .7, .85], [24363, .3, .85], [17627, .4, .9], [3593, .5, .85], ['we:2629', .8, .95], [11359, .4, .3], [17543, .45, .4], [11348, .2, .8]],
+  'Paladin|Healers':      [[18194, .7, .85], [24363, .3, .85], [17627, .4, .9], [3593, .55, .85], [17626, .3, .9], [10668, .3, .7], ['we:2629', .8, .95], [11359, .4, .3], [17543, .45, .4]],
+  'Druid|Healers':        [[18194, .7, .85], [17627, .4, .9], [3593, .4, .85], ['we:2629', .7, .95], [17543, .4, .4]],
+  'Shaman|Healers':       [[18194, .7, .85], [24363, .3, .85], [17627, .4, .9], [3593, .4, .85], ['we:2629', .75, .95], [17543, .4, .4]],
+  'Priest|Ranged DPS':    [[11474, .7, .85], [17539, .6, .85], ['we:2628', .7, .95], [22730, .6, .85], [17543, .4, .3]],
+  'Druid|Ranged DPS':     [[17539, .7, .85], [22730, .6, .85], ['we:2628', .6, .95], [17543, .4, .3]],
+  'Paladin|Tanks':        [[3593, .8, .9], [11348, .5, .8], [17538, .4, .85], [24799, .6, .85], ['we:1703', .6, .95], [17543, .5, .3]],
+  'Druid|Tanks':          [[3593, .8, .9], [17538, .7, .85], [11348, .4, .8], [18192, .6, .85], [17543, .5, .3]],
+  'Paladin|Physical DPS': [[17538, .5, .85], [11405, .6, .8], [24799, .6, .85], ['we:2506', .8, .95], [17528, .0, 0], [11359, .3, .3]],
+  'Shaman|Physical DPS':  [[17538, .6, .85], [11405, .6, .8], [24799, .6, .85], ['we:1703', .6, .95], [11359, .3, .3]],
+  'Druid|Physical DPS':   [[17538, .8, .85], [18192, .6, .85], [17038, .4, .8], [5665, .3, .7]],
+};
+// Example Consumable Rules, based on what each class + role used in that log. Some combos are
+// left without rules on purpose, so the "no rules → no consumes score" state is visible too.
+const DEMO_CONSUME_RULES = { combos: {
+  'Warrior|Tanks': { groups: [{ id: 'g1', name: 'Defensive elixir or flask', ids: [3593, 11348, 11371, 3223, 17626] }, { id: 'g2', name: 'Food', ids: [24799, 25661, 18125] }, { id: 'g3', name: 'Sharpening stone', ids: ['we:any'] }] },
+  'Warrior|Physical DPS': { groups: [{ id: 'g1', name: 'Mongoose or Giants', ids: [17538, 11405] }, { id: 'g2', name: 'Food or firewater', ids: [17038, 18125, 24799] }, { id: 'g3', name: 'Sharpening stone', ids: ['we:any'] }] },
+  'Rogue|Physical DPS': { groups: [{ id: 'g1', name: 'Mongoose', ids: [17538] }, { id: 'g2', name: 'Food or firewater', ids: [18192, 17038, 18125] }, { id: 'g3', name: 'Poison or stone', ids: ['we:any'] }] },
+  'Hunter|Ranged DPS': { groups: [{ id: 'g1', name: 'Mongoose', ids: [17538] }, { id: 'g2', name: 'Food', ids: [18192, 18125] }] },
+  'Mage|Ranged DPS': { groups: [{ id: 'g1', name: 'Arcane elixir or flask', ids: [17539, 11390, 17628] }, { id: 'g2', name: 'Firepower or Frost Power', ids: [26276, 7844, 21920] }, { id: 'g3', name: 'Wizard oil', ids: ['we:2628'] }] },
+  'Warlock|Ranged DPS': { groups: [{ id: 'g1', name: 'Arcane elixir or flask', ids: [17539, 11390, 17628] }, { id: 'g2', name: 'Shadow Power', ids: [11474] }, { id: 'g3', name: 'Wizard oil', ids: ['we:2628'] }] },
+  'Priest|Healers': { groups: [{ id: 'g1', name: 'Mana regen', ids: [18194, 24363, 17627] }, { id: 'g2', name: 'Mana oil', ids: ['we:2629'] }] },
+  'Paladin|Healers': { groups: [{ id: 'g1', name: 'Mana regen', ids: [18194, 24363, 17627] }, { id: 'g2', name: 'Mana oil', ids: ['we:2629'] }] },
+  'Druid|Healers': { groups: [{ id: 'g1', name: 'Mana regen', ids: [18194, 24363, 17627] }, { id: 'g2', name: 'Mana oil', ids: ['we:2629'] }] },
+  'Shaman|Healers': { groups: [{ id: 'g1', name: 'Mana regen', ids: [18194, 24363, 17627] }, { id: 'g2', name: 'Mana oil', ids: ['we:2629'] }] },
+} };
+function _demoHash(str) { return [...str].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7); }
+function _demoRng(seed) { let x = seed || 1; return () => { x = (x * 1103515245 + 12345) >>> 0; return (x >>> 8) / 16777216; }; }
+// A raid's fake log: everyone present, each boss a kill (a Ragnaros wipe some weeks)
+function demoWclFor(raid, idx) {
+  const rnd = _demoRng(_demoHash(raid.date));
+  const fights = DEMO_MC_BOSSES.map(name => ({ name, kill: true, report: 'demo' }));
+  if (idx % 2) fights.splice(fights.length - 1, 0, { name: 'Ragnaros', kill: false, report: 'demo' });
+  const code = 'Demo' + raid.date.replace(/-/g, '') + 'MCxx'.slice(0, 4);
+  raid.wcl = { demo: true, reports: [{ code, site: 'vanilla', title: 'Molten Core', zone: 'Molten Core' }], fights, players: {}, abilities: {}, syncedAt: raid.endedAt, _rnd: rnd };
+  return raid.wcl;
+}
+// Add one raider to a raid's fake log. diligence 0..1 (default: stable per raider)
+function demoWclAdd(raid, p, diligence) {
+  const w = raid.wcl; if (!w) return;
+  const name = p.name.split(' ')[0], k = normalizeName(name), rnd = _demoRng(_demoHash(raid.date + p.name));
+  const d = diligence ?? 0.55 + 0.45 * ((_demoHash(p.name) % 1000) / 1000);
+  const n = w.fights.length, all = 2 ** n - 1;
+  const late = diligence === undefined && rnd() < 0.06 ? 2 : 0; // the odd late arrival misses the first bosses
+  const f = all - (2 ** late - 1);
+  const pl = (w.players[k] = { name, cls: p.class, f, b: {} });
+  for (const [id, use, cov] of DEMO_CONSUME_PROFILES[comboKey(p.class, p.role)] || [[3593, .5, .85]]) {
+    if (rnd() > use * (0.7 + 0.3 * d) + (diligence === 1 ? 1 : 0)) continue;
+    let m = 0; for (let i = 0; i < n; i++) if (((f / 2 ** i) | 0) % 2 && rnd() < Math.min(1, cov * (0.8 + 0.25 * d) + (diligence === 1 ? 1 : 0))) m += 2 ** i;
+    if (!m) continue;
+    pl.b[id] = m;
+    w.abilities[id] = String(id).startsWith('we:') ? wclAbilityName(id) : DEMO_BUFF_NAMES[id] || `Buff #${id}`;
+    if (String(id).startsWith('we:')) { pl.b[WCL_WE_ANY] = _or(pl.b[WCL_WE_ANY] || 0, m); w.abilities[WCL_WE_ANY] = wclAbilityName(WCL_WE_ANY); }
+  }
+  return pl;
+}
+
+// Write the fixture into this dashboard's storage (roster, raids, fake logs, glossary, rules). Never calls softres.
 async function applyDemoFixture(fx) {
   _demoGlossaryMC();
   const sheets = fx.softres?.sheets || {};
@@ -7536,36 +7175,30 @@ async function applyDemoFixture(fx) {
     ? { id: _uid('s_'), code: sheets[r.key], url: `https://softres.it/raid/${sheets[r.key]}`, instances: [{ slug: 'mc', name: 'Molten Core' }], reserveLimit: 3, reserves: r.reserves.map(x => ({ name: x.name.split(' ')[0], spec: null, items: [...x.items], note: '' })), edits: {} }
     : { id: _uid('s_'), code: 'DEMO-' + r.key, url: '', demo: true, instances: [{ slug: 'mc', name: 'Molten Core' }], reserveLimit: 3, reserves: r.reserves.map(x => ({ name: x.name, spec: null, items: [...x.items], note: '' })), edits: {}, syncedAt: at };
   const players = fx.players.map(p => ({ name: p.name, role: p.role, class: p.class, isAlt: false, ...(p.srAdjustments ? { srAdjustments: p.srAdjustments } : {}) }));
-  const raids = [], clSheets = [], parsed = {};
+  const raids = [];
+  const byName = new Map(players.map(p => [p.name, p]));
   for (const r of fx.raids) {
     const raid = normalizeRaid({ name: r.name, date: r.date, optional: r.optional, status: 'past', createdAt: r.date + 'T01:00:00Z', endedAt: r.date + 'T06:00:00Z',
       softres: [sheetFor(r, r.date + 'T02:00:00Z')], loot: [] });
     for (const l of r.loot) if (l.to !== '||de||') raid.loot.push({ id: _uid('l_'), itemKey: 'id:' + l.item, name: itemName('id:' + l.item), recipient: l.to, sr: l.sr, at: r.date + 'T04:00:00Z' });
-    if (r.cla) {
-      const keys = r.present.map(normalizeName);
-      raid.claLabel = r.date; raid.attendance.cla = keys;
-      clSheets.push({ label: r.date, demo: true });
-      const buffScores = {};
-      for (const [n, [e, f, w, s]] of Object.entries(r.cla)) buffScores[normalizeName(n)] = { [r.date]: { total: Math.round((e + f + w) / 3), scrolls: s, elixir: e, food: f, wepOil: w } };
-      parsed[r.date] = { sheetDate: r.date + 'T12:00:00.000Z', claPresence: keys, canonicalNames: {}, gearIssues: {}, latestIssues: {}, buffScores, gearListing: {} };
-    }
+    // A fake Warcraft Logs report for each night (the 4th has none → attendance falls back to reserves)
+    if (r.cla) { demoWclFor(raid, raids.length); for (const n of r.present) if (byName.get(n)) demoWclAdd(raid, byName.get(n)); }
+    else raid.wcl = { demo: true, none: true, reports: [], fights: [], players: {}, abilities: {}, syncedAt: raid.endedAt };
     raids.push(raid);
   }
   // In-game test characters. Bunzypoo is in the fixture; Bunzie is added here, dashboard-only (his
   // reserves are hand edits on the sheets, so softres is untouched). Tonight Bunzie double-reserves an
   // item he has lost several times and also reserves Bunzypoo's item, where only Bunzypoo has a bonus —
   // so a Gargul import from the dashboard shows per-item bonuses on both characters.
-  const bunzieTonight = addDemoBunzie(fx, players, raids, parsed);
-  // Unrecognised names for Management → Raiders: Bunzie's alt and a pug showed up in the last CLA
+  const bunzieTonight = addDemoBunzie(fx, players, raids);
+  // Unrecognised names for the Roster inbox: Bunzie's alt and a pug showed up in the last log
   const lastClaFx = [...fx.raids].reverse().find(r => r.cla);
   if (lastClaFx) {
-    const raid = raids[fx.raids.indexOf(lastClaFx)], p = parsed[lastClaFx.date];
-    for (const nm of ['Bunziealt', 'Randompug']) {
-      const k = normalizeName(nm);
-      raid.attendance.cla.push(k); p.claPresence.push(k); p.canonicalNames[k] = nm;
-    }
+    const raid = raids[fx.raids.indexOf(lastClaFx)];
+    demoWclAdd(raid, { name: 'Bunziealt', class: 'Mage', role: 'Ranged DPS' });
+    demoWclAdd(raid, { name: 'Randompug', class: 'Warrior', role: 'Physical DPS' });
   }
-  // A benched raider on the latest CLA raid: missing from the CLA, marked bench by hand
+  // A benched raider on the latest logged raid: missing from the log, marked bench by hand
   if (lastClaFx) {
     const raid = raids[fx.raids.indexOf(lastClaFx)], inCla = new Set(lastClaFx.present.map(normalizeName));
     const prev = fx.raids[fx.raids.indexOf(lastClaFx) - 1];
@@ -7587,12 +7220,16 @@ async function applyDemoFixture(fx) {
       awards: lastFx.loot.map((l, i) => ({ itemId: +l.item, to: l.to === '||de||' ? '||de||' : l.to.split(' ')[0] + '-Dreamscythe', by: 'Bunzypoo-Dreamscythe',
         at: t0 + i * 90, received: true, bonusLoot: false, de: l.to === '||de||', rolls: [] })) };
   }
-  // Current gear on the latest CLA: Molten Core pieces, what they won first
-  const lastCla = [...fx.raids].reverse().find(r => r.cla);
-  if (lastCla) {
+  // Current gear on the latest log: Molten Core pieces, what they won first
+  if (lastClaFx) {
+    const raid = raids[fx.raids.indexOf(lastClaFx)];
     const won = {}; for (const r of raids) for (const l of r.loot) (won[lootKey(l)] ||= []).push(l.itemKey);
-    parsed[lastCla.date].gearListing = Object.fromEntries(players.map(p => [normalizeName(p.name), demoGearFor(p, won[normalizeName(p.name)] || [])]));
+    for (const p of players) {
+      const wp = raid.wcl.players[normalizeName(p.name.split(' ')[0])]; if (!wp) continue;
+      wp.g = Object.fromEntries(Object.entries(demoGearFor(p, won[normalizeName(p.name)] || [])).map(([sl, key]) => [sl, +String(key).replace('id:', '')]).filter(([, id]) => id));
+    }
   }
+  for (const r of raids) delete r.wcl?._rnd;
   // The open sheet becomes today's active raid
   if (fx.open) raids.push(normalizeRaid({ name: fx.open.name, date: todayMST(), optional: false, status: 'active', createdAt: new Date().toISOString(), softres: [sheetFor(fx.open, new Date().toISOString())], loot: [] }));
   if (fx.open) bunzieTonight?.(raids[raids.length - 1]);
@@ -7600,9 +7237,8 @@ async function applyDemoFixture(fx) {
   await _putWf('roster.json', { players, excluded: [] });
   await _putWf('glossary.json', glossary);
   await _putWf('sr-rules.json', DEFAULT_SR_RULES);
+  await _putWf('consume-rules.json', DEMO_CONSUME_RULES);
   await _putWf('raids.json', { raids });
-  await _putWf('cla-sheets.json', { sheets: clSheets, parsed });
-  try { sessionStorage.removeItem(STORAGE_NS + 'claSheets'); } catch(_) {}
   return { players: players.length, raids: raids.length, linked: Object.keys(sheets).length };
 }
 
@@ -7628,14 +7264,7 @@ async function fetchData(opts = {}) {
   resetProxyBreaker();
   setStatus('Summoning the scrolls...', 'loading');
   try {
-    await fetchAllClaData();
-    _storeParsedClaData();
-    const claFailed = _claFailedLabels.size > 0 || _corsProxyTripped;
-    if (_claNewlyParsed > 0 && writeToken && !claFailed) {
-      saveClaSheetsToGitHub().catch(e => console.warn('CLA cache persist failed:', e.message));
-      _claNewlyParsed = 0;
-    }
-    if (bakeClaPresence() && writeToken) await saveRaids().catch(() => {});
+    rebuildGearListing();
     refreshAll();
     const stamp = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const done = () => fetchErrors.length
@@ -7651,6 +7280,10 @@ async function fetchData(opts = {}) {
       let changed = false;
       for (const r of rhSync) { try { changed = (await syncRaidHelper(r)).changed || changed; } catch (e) { changed = true; fetchErrors.push({ source: `Raid-Helper (${r.name})`, message: e.message, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }); } }
       if (changed) { await saveRaids().catch(() => {}); refreshAll(); }
+    }
+    // Officers read Warcraft Logs for recently ended raids (attendance + consumables)
+    if (!opts.skipSoftres && writeToken) {
+      if (await wclAutoSync()) { await saveRaids().catch(() => {}); rebuildGearListing(); refreshAll(); done(); }
     }
     if (!opts.skipSoftres && writeToken && toSync.length) {
       setStatus('Syncing softres…', 'loading');
@@ -7670,7 +7303,6 @@ async function fetchData(opts = {}) {
     const cfg = await fetch('./config.json?t=' + Date.now()).then(r => r.json());
     if (cfg.cf_worker_url)  CF_WORKER_URL  = cfg.cf_worker_url.trim().replace(/\/+$/, '');
     if (cfg.kv_prefix != null) KV_PREFIX   = String(cfg.kv_prefix);
-    if (cfg.apps_script)    APPS_SCRIPT    = cfg.apps_script;
     if (cfg.cors_api_key)   CORS_API_KEY   = cfg.cors_api_key.trim();
     if (cfg.guild_name)     GUILD_NAME     = cfg.guild_name;
     if (cfg.guild_subtitle) GUILD_SUBTITLE = cfg.guild_subtitle;
@@ -7679,7 +7311,10 @@ async function fetchData(opts = {}) {
     // detection. Classic Era ("classic" / 4) for now — change both when WoW Forever gets its own.
     if (cfg.wowhead_branch) WOWHEAD_BRANCH = cfg.wowhead_branch;
     if (cfg.wowhead_data_env) WOWHEAD_DATA_ENV = +cfg.wowhead_data_env;
-    if (cfg.enable_apps_script != null) ENABLE_APPS_SCRIPT = !!cfg.enable_apps_script;
+    // Warcraft Logs: which section (vanilla / fresh / classic …) and the guild whose uploads are
+    // matched to raids automatically. Reports pasted by hand carry their own section.
+    if (cfg.wcl_site) WCL_SITE = String(cfg.wcl_site).trim();
+    if (cfg.wcl_guild_name) WCL_GUILD = { name: cfg.wcl_guild_name, server: cfg.wcl_guild_server || '', region: cfg.wcl_guild_region || 'us' };
     if (cfg.raidhelper_server_id) RH_SERVER_ID = String(cfg.raidhelper_server_id).trim();
     if (cfg.demo_announce_channel) DEMO_ANNOUNCE_CHANNEL = String(cfg.demo_announce_channel).trim();
     if (cfg.sr) console.info('config.json "sr" is ignored — SR rules now live on the SR Rules page.');
@@ -7691,15 +7326,13 @@ async function fetchData(opts = {}) {
   const h1 = document.querySelector('header h1'), sub = document.querySelector('header .subtitle');
   if (h1) h1.textContent = GUILD_NAME;
   if (sub) sub.textContent = GUILD_SUBTITLE;
-  if (ENABLE_APPS_SCRIPT && APPS_SCRIPT && !CF_WORKER_URL) addError('config.json', 'Missing "cf_worker_url" — CLA and softres fetches have no proxy.');
+  if (!CF_WORKER_URL) addError('config.json', 'Missing "cf_worker_url" — softres, Raid-Helper and Warcraft Logs need it.');
   boot();
 })();
 
 async function boot() {
-  claSheets = loadClaSheets();
   updateAuthState();
-  await loadClaSheetsFromRepo();
-  await Promise.all([loadRosterFromRepo(), loadGlossaryFromRepo(), loadRulesFromRepo(), loadRaidsFromRepo()]);
+  await Promise.all([loadRosterFromRepo(), loadGlossaryFromRepo(), loadRulesFromRepo(), loadConsumeRulesFromRepo(), loadRaidsFromRepo()]);
   _raidView.raidId = _urlGetParam('raid');
   _raidView.sub = _urlGetParam('sub') || 'loot';
   const tab = _urlGetParam('tab');
@@ -7713,328 +7346,6 @@ async function boot() {
     console.warn('%c⚠ wipeAllData() is still present in this build — remove it before go-live (search for "TODO BEFORE GO-LIVE").', 'color:#e07830;font-weight:bold;');
   }
   console.info('WF dashboard loaded. Type wfDebug.help() for debugging tools.');
-}
-
-</script>
-<!--
-  WarcraftLogs integration — DISABLED for the initial WoW Forever release.
-  type="text/plain" means the browser never runs this. It is the LC dashboard code verbatim
-  (PKCE sign-in via Apps Script, zoneRankings queries, WCL column cell renderers).
-  To re-enable: change the type to text/javascript, drop the duplicate let/const
-  declarations it shares with the main script, restore the #wclSection markup and the
-  WCL <th>/<td> columns, and call fetchWclAllStars(WCL_REALM) at the end of boot().
--->
-<script type="text/plain" id="wcl-integration-disabled">
-const ITEM_SHEET_ID = '1bt-0NVkheMGvWl2FgCcHZH86ZzQxIMuzK_cxPEAsr0A';
-const ITEM_SHEET_GIDS = [170506057, 461402221, 1447687848, 962096481, 1520599598];
-const WCL_CONFIG_FILE = 'wcl-config.json';
-const DATA_DIR = 'data'; // subdirectory where non-config JSON files live
-
-// ── Crypto helpers (AES-GCM via Web Crypto API) ──────────────────
-async function deriveKey(password) {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode(CF_WORKER_URL || 'dbs-lc-salt'), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
-  );
-}
-
-async function encryptData(password, data) {
-  const key = await deriveKey(password);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder();
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(data)));
-  return { iv: Array.from(iv), data: Array.from(new Uint8Array(ciphertext)) };
-}
-
-async function decryptData(password, encrypted) {
-  const key = await deriveKey(password);
-  const iv = new Uint8Array(encrypted.iv);
-  const data = new Uint8Array(encrypted.data);
-  const dec = new TextDecoder();
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-  return JSON.parse(dec.decode(plain));
-}
-
-// ── PKCE helpers ──────────────────────────────────────────────────
-function generateRandomString(length = 64) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-  const arr = crypto.getRandomValues(new Uint8Array(length));
-  return Array.from(arr).map(b => chars[b % chars.length]).join('');
-}
-
-async function generateCodeChallenge(verifier) {
-  const enc = new TextEncoder();
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode(verifier));
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-async function startWclPkce() {
-  const verifier = generateRandomString(64);
-  const challenge = await generateCodeChallenge(verifier);
-  localStorage.setItem('wclVerifier', verifier);
-  const params = new URLSearchParams({
-    client_id: WCL_CLIENT_ID,
-    redirect_uri: WCL_REDIRECT_URI,
-    response_type: 'code',
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    state: 'wclauth'
-  });
-  window.location.href = WCL_AUTH_URL + '?' + params.toString();
-}
-
-async function exchangeWclCode(code) {
-  const verifier = localStorage.getItem('wclVerifier');
-  if (!verifier) { console.warn('No PKCE verifier found in session'); return null; }
-  // Route through Apps Script to avoid CORS on token endpoint
-  // Encode all params as base64 JSON to keep URL short and avoid length issues
-  const payload = btoa(JSON.stringify({
-    grant_type: 'authorization_code',
-    client_id: WCL_CLIENT_ID,
-    redirect_uri: WCL_REDIRECT_URI,
-    code,
-    code_verifier: verifier
-  }));
-  const rawUrl = APPS_SCRIPT + '?action=wclAuth&payload=' + encodeURIComponent(payload);
-  try {
-    // Must go through corsproxy — Apps Script redirects through googleusercontent.com which has no CORS headers
-    const text = await appsScriptFetch(rawUrl);
-    let data;
-    try { data = JSON.parse(text); } catch(e) { console.warn('Token parse error:', text); return null; }
-    if (data.error) { console.warn('Token exchange error:', data); return null; }
-    localStorage.removeItem('wclVerifier');
-    return data;
-  } catch(e) { console.warn('Token exchange failed:', e.message); return null; }
-}
-
-async function handleWclCallback() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('state') !== 'wclauth' || !params.get('code')) return false;
-  setWclStatus('Exchanging auth code...', '');
-  const data = await exchangeWclCode(params.get('code'));
-  // Clean URL
-  window.history.replaceState({}, document.title, window.location.pathname);
-  if (!data?.access_token) { setWclStatus('Auth failed — try again.', 'error'); return false; }
-  wclToken = data.access_token;
-  wclTokenExpiry = Date.now() + ((data.expires_in || 3600) - 60) * 1000;
-  sessionStorage.setItem('wclToken', wclToken);
-  sessionStorage.setItem('wclTokenExpiry', String(wclTokenExpiry));
-  // Also persist to localStorage so token survives page reload
-  localStorage.setItem('wclToken', wclToken);
-  localStorage.setItem('wclTokenExpiry', String(wclTokenExpiry));
-  setWclStatus('✓ Connected to WarcraftLogs!', 'success');
-  return true; // fetchWclAllStars will be called after fetchData() completes
-}
-
-let WCL_CLIENT_ID = 'a1577bef-44fb-4fb3-87f6-555c24400a38';
-let WCL_ZONE_ID = 1048;        // TBC Classic zone — override via config.json wcl_zone_id
-let WCL_GAME_SLUG = 'tbc-classic'; // WCL game version slug
-let WCL_API_URL = 'https://classic.warcraftlogs.com/api/v2/client'; // Classic uses separate endpoint
-const WCL_REDIRECT_URI = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
-let WCL_REALM = 'dreamscythe';
-const WCL_AUTH_URL = 'https://www.warcraftlogs.com/oauth/authorize';
-const WCL_TOKEN_URL = 'https://www.warcraftlogs.com/oauth/token';
-const WCL_REGION = 'US';
-let wclToken = null;
-let wclTokenExpiry = 0;
-let wclData = {}; // normalized name -> { points, rank, outOf }
-
-async function saveWclConfigToGitHub(password, clientId, clientSecret, realm) {
-  if (!writeToken) { setWclStatus('Write token required to save credentials.', 'error'); return; }
-  try {
-    const encrypted = await encryptData(password, { clientId, clientSecret, realm });
-    const _wbase = (u => u.startsWith('http') ? u : 'https://' + u)(CF_WORKER_URL.trim().replace(/\/+$/, ''));
-    const putRes = await fetch(`${_wbase}/${WCL_CONFIG_FILE}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Token': writeToken },
-      body: JSON.stringify(encrypted, null, 2),
-    });
-    if (putRes.ok) {
-      setWclStatus('✓ Credentials encrypted and saved!', 'success');
-    } else {
-      setWclStatus('Failed to save to GitHub — check your GitHub token.', 'error');
-    }
-  } catch(e) {
-    setWclStatus(`Encryption error: ${e.message}`, 'error');
-  }
-}
-
-async function loadWclConfigFromRepo(password) {
-  try {
-    let encrypted;
-    try { encrypted = await fetchFromWorker('wcl-config.json'); } catch(e) { return false; }
-    const config = await decryptData(password, encrypted);
-    if (!config.clientId || !config.clientSecret || !config.realm) return false;
-    sessionStorage.setItem('wclClientId', config.clientId);
-    sessionStorage.setItem('wclClientSecret', config.clientSecret);
-    sessionStorage.setItem('wclRealm', config.realm);
-    return config;
-  } catch(e) {
-    return false; // wrong password or no file
-  }
-}
-
-function setWclStatus(msg, type = '') {
-  const el = document.getElementById('wclStatus');
-  if (el) { el.textContent = msg; el.style.color = type === 'error' ? 'var(--red)' : type === 'success' ? '#4caa6e' : 'var(--text-dim)'; }
-  const topBtn = document.getElementById('wclConnectTopBtn');
-  const connectedLabel = document.getElementById('wclConnectedLabel');
-  const connected = type === 'success';
-  if (topBtn) topBtn.style.display = connected ? 'none' : '';
-  if (connectedLabel) connectedLabel.style.display = connected ? '' : 'none';
-  // Clear status text when connected — label handles it
-  if (connected && el) el.textContent = '';
-  document.body.classList.toggle('wcl-hidden', !connected);
-}
-
-async function getWclToken() {
-  // Check in-memory token
-  if (wclToken && Date.now() < wclTokenExpiry) return wclToken;
-  // Check sessionStorage first (survives PKCE redirect within same tab)
-  let stored = sessionStorage.getItem('wclToken');
-  let storedExpiry = parseInt(sessionStorage.getItem('wclTokenExpiry') || '0');
-  // Fall back to localStorage (persists across page loads and tab closes)
-  if (!stored || Date.now() >= storedExpiry) {
-    stored = localStorage.getItem('wclToken');
-    storedExpiry = parseInt(localStorage.getItem('wclTokenExpiry') || '0');
-  }
-  if (stored && Date.now() < storedExpiry) {
-    wclToken = stored;
-    wclTokenExpiry = storedExpiry;
-    return wclToken;
-  }
-  return null; // Need to re-authenticate via PKCE
-}
-async function wclFetch(url) {
-  // Apps Script redirects to googleusercontent.com — fetch the redirect target directly
-  const res = await fetch(url, { redirect: 'follow' });
-  return res;
-}
-
-async function wclGraphQL(query, token) {
-  const q = btoa(unescape(encodeURIComponent(query)));
-  const rawUrl = APPS_SCRIPT + '?action=wclQuery&q=' + encodeURIComponent(q) + '&token=' + encodeURIComponent(token);
-  // Must go through corsproxy — Apps Script redirects through googleusercontent.com which has no CORS headers
-  const text = await appsScriptFetch(rawUrl);
-  if (text.trimStart().startsWith('<')) throw new Error('Apps Script returned HTML — check deployment');
-  return JSON.parse(text);
-}
-
-async function fetchWclAllStars(realm) {
-  if (!ENABLE_WCL) return;
-  const token = await getWclToken();
-  if (!token) {
-    // Token expired or missing — show connect button, hide column, clear spinners
-    setWclStatus('Not connected', '');
-    if (lastRenderData?.roles) {
-      lastRenderData.roles.flatMap(r => r.players).forEach(p => {
-        if (p.name) updateWclCell(normalizeName(p.name), null);
-      });
-    }
-    return;
-  }
-  try {
-
-    // Build player list with their role for metric selection
-    // Include ALL named players (even pct===null / inactive with no CLA) so spinners get resolved
-    const players = lastRenderData.roles.flatMap(r =>
-      r.players.filter(p => p.name).map(p => ({ ...p, roleName: r.name }))
-    );
-    console.log('Fetching WCL for', players.length, 'players');
-    // Process in batches of 5 to avoid rate-limiting proxies
-    const BATCH_SIZE = 3;
-    for (let i = 0; i < players.length; i += BATCH_SIZE) {
-      const batch = players.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(async p => {
-        // Use canonical name from CLA if available, otherwise fall back to display name
-        const wclName = canonicalNames[normalizeName(p.name)] || p.name;
-        const isHealer = p.roleName === 'Healers';
-        const metric = isHealer ? 'hps' : 'dps';
-        const charQuery = `{
-          characterData {
-            character(name: "${wclName}", serverSlug: "${realm}", serverRegion: "${WCL_REGION}") {
-              zoneRankings(zoneID: ${WCL_ZONE_ID}, metric: ${metric})
-            }
-          }
-        }`;
-        try {
-          const charData = await wclGraphQL(charQuery, token).catch(e => {
-            console.warn('Char query failed for', wclName, e);
-            updateWclCell(normalizeName(p.name), null, wclName);
-            return null;
-          });
-          if (!charData) { wclData[normalizeName(p.name)] = null; updateWclCell(normalizeName(p.name), null); return; }
-          const char = charData?.data?.characterData?.character;
-          const rankings = char?.zoneRankings;
-          if (!rankings) { console.warn('No rankings for', p.name, JSON.stringify(charData)?.slice(0, 200)); wclData[normalizeName(p.name)] = null; updateWclCell(normalizeName(p.name), null); return; }
-          const key = normalizeName(p.name);
-          const entry = {
-            points: rankings.allStars?.[0]?.points ?? null,
-            rank: rankings.allStars?.[0]?.rank ?? null,
-            outOf: rankings.allStars?.[0]?.total ?? null,
-            bestPerf: rankings.bestPerformanceAverage ?? null,
-            medianPerf: rankings.medianPerformanceAverage ?? null,
-          };
-          // Sycamoore one-off: use best parse as median (healer median unreliable)
-          if (normalizeName(wclName) === 'sycamoore' && entry.bestPerf !== null) {
-            entry.medianPerf = entry.bestPerf;
-          }
-          wclData[key] = entry;
-          updateWclCell(key, entry);
-        } catch(e) { console.warn('WCL char error for', p.name, e); wclData[normalizeName(p.name)] = null; updateWclCell(normalizeName(p.name), null); }
-      }));
-      // Small delay between batches to avoid rate limiting
-      if (i + BATCH_SIZE < players.length) await new Promise(r => setTimeout(r, 500));
-    }
-
-    // Ensure ALL players with spinners get a dash (including those skipped due to pct===null)
-    // Mark any unresolved players as null so re-render shows — not spinner
-    lastRenderData.roles.flatMap(r => r.players).forEach(p => {
-      const key = normalizeName(p.name);
-      if (!wclData.hasOwnProperty(key)) wclData[key] = null;
-    });
-
-    // Final re-render to update sort order if sorted by WCL (skip if in loot view)
-    if (lastRenderData.roles.length && groupingMode !== 'loot') render(lastRenderData);
-  } catch(e) {
-    console.warn('WCL fetch failed:', e.message);
-    lastRenderData.roles.flatMap(r => r.players).forEach(p => {
-      wclData[normalizeName(p.name)] = null;
-    });
-    if (lastRenderData.roles.length && groupingMode !== 'loot') render(lastRenderData);
-  }
-}
-
-function wclCellHtml(wcl, playerName) {
-  const wclName = (playerName ? (canonicalNames[normalizeName(playerName)] || playerName) : '').toLowerCase();
-  const href = wclName ? `https://fresh.warcraftlogs.com/character/us/dreamscythe/${encodeURIComponent(wclName)}` : null;
-  const link = (inner, style) => href
-    ? `<a href="${href}" target="_blank" rel="noopener" style="text-decoration:none;${style}">${inner}</a>`
-    : `<span style="${style}">${inner}</span>`;
-  if (wcl === null) return link('—', 'color:var(--text-dim);font-size:13px;'); // explicit failure
-  if (!wcl || wcl.medianPerf === null || wcl.medianPerf === undefined) return link('—', 'color:var(--text-dim);font-size:13px;');
-  const col = wclColor(wcl.medianPerf);
-  return link(`${Math.round(wcl.medianPerf)}%`, `color:${col};font-family:'Cinzel',serif;font-size:14px;font-weight:600;`);
-}
-
-function updateWclCell(key, entry, playerName) {
-  const name = playerName || key;
-  document.querySelectorAll(`[data-wcl-key="${key}"]`).forEach(td => {
-    td.innerHTML = wclCellHtml(entry, name);
-  });
-}
-
-function wclColor(pct) {
-  if (pct === null) return 'var(--text-dim)';
-  if (pct >= 99) return '#e268a8'; // pink
-  if (pct >= 95) return '#ff8000'; // orange
-  if (pct >= 75) return '#a335ee'; // purple
-  if (pct >= 50) return '#0070ff'; // blue
-  if (pct >= 25) return '#1eff00'; // green
-  return '#666666'; // grey
 }
 
 </script>
