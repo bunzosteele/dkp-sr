@@ -1773,6 +1773,10 @@
 .prc-chip.over { color: #f08080; }
 .prc-list { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(240,176,96,0.2); font-size: 16px; }
 .prc-item { white-space: normal; }
+.end-raid-btn { background:linear-gradient(180deg,#d9b25a,#b48a32); color:#1a1206; border:1px solid #e8c878; border-radius:6px; padding:8px 18px; font-weight:800; letter-spacing:0.08em; font-size:16px; cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,0.3), 0 2px 8px rgba(200,160,74,0.25); }
+.end-raid-btn:hover { filter:brightness(1.08); }
+.announce-chk { display:inline-flex; align-items:center; gap:6px; color:var(--text); cursor:pointer; white-space:nowrap; }
+.announce-chk.off { opacity:0.5; cursor:default; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -1887,6 +1891,8 @@ let ENABLE_WCL = false;
 let ENABLE_APPS_SCRIPT = true;
 let APPS_SCRIPT = '';
 let CORS_API_KEY = '';
+let RH_SERVER_ID = '';
+let DEMO_ANNOUNCE_CHANNEL = '';  // demo raids announce here (a test channel) instead of a real sign-up channel          // Discord server ID (Raid-Helper server API, via the Worker)
 let writeToken = localStorage.getItem('writeToken') || '';
 
 // ── Data ────────────────────────────────────────────────────────
@@ -5408,7 +5414,7 @@ function renderRaidDetail(panel, raid) {
           ${raid.status === 'active' && Object.keys(raidReserves(raid)).length ? `<button class="ghost-btn" onclick="copyGargulImport('${raid.id}')" title="Paste into Gargul's soft-reserve import (/gl sr)">⧉ Gargul export</button>` : ''}
           <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Edit</button>
           ${raid.status === 'active'
-            ? `<button class="small-gold-btn" onclick="endRaid('${raid.id}')">END RAID</button>`
+            ? `${announceToggleHtml(raid)}<button class="end-raid-btn" onclick="endRaid('${raid.id}')">END RAID</button>`
             : `<button class="ghost-btn" onclick="reopenRaid('${raid.id}')">Reopen</button>`}
           <button class="ghost-btn danger" onclick="deleteRaid('${raid.id}')">Delete</button>
         </span>
@@ -5472,11 +5478,14 @@ async function endRaid(id) {
   const hasCla = !!raidClaSet(raid), hasManual = Object.keys(raid.attendance.overrides).length > 0;
   let note = hasCla ? 'Attendance comes from the CLA (plus any manual marks).' : raid.raidHelper ? 'Attendance comes from the Raid-Helper sign-ups (plus any manual marks).' : hasManual ? 'Attendance comes from reserves, plus your manual marks.'
     : `No CLA or manual attendance yet — everyone who reserved on softres will count as present (${Object.keys(raidReserves(raid)).filter(k => rosterPlayer(k)).length} raiders). You can still add the CLA or edit attendance afterwards.`;
-  if (!confirm(`End "${raid.name}"?\n\n${note}\n\nReserves beyond anyone's balance are forgiven once the raid ends.`)) return;
+  const announce = canAnnounce(raid) && !!document.getElementById('announceLoot')?.checked;
+  const where = raid.raidHelper?.demo ? ` the test channel (${DEMO_ANNOUNCE_CHANNEL})` : raid.raidHelper?.event?.channelName ? ` #${raid.raidHelper.event.channelName}` : ' the Raid-Helper sign-up channel';
+  if (!confirm(`End "${raid.name}"?\n\n${note}\n\nReserves beyond anyone's balance are forgiven once the raid ends.${announce ? `\n\nThe loot and current bad luck protection will be posted to${where}.` : ''}`)) return;
   if (raid.raidHelper?.eventId && !raid.raidHelper.demo) { try { await syncRaidHelper(raid); raid.raidHelper.finalAt = new Date().toISOString(); } catch (_) { /* keep the last good copy */ } }
   raid.status = 'past'; raid.endedAt = new Date().toISOString();
   await saveRaids().catch(() => {});
   refreshAll();
+  if (announce) await announceRaidLoot(raid);
 }
 async function reopenRaid(id) {
   const raid = getRaid(id);
@@ -6196,6 +6205,105 @@ function bakeClaPresence() {
     }
   }
   return changed;
+}
+
+// ── End-of-raid announcement (Raid-Helper's embed endpoint, via the Worker) ──
+// Posted to the channel of the raid's linked Raid-Helper sign-up when an officer ends the raid
+// with "Announce loot" ticked. Two embeds: the loot from this raid, and everyone's current
+// bad luck protection. Long lists split into extra embeds.
+const DISCORD_DESC_MAX = 3800;   // Discord allows 4096 per embed description; leave headroom
+
+// Demo raids announce to DEMO_ANNOUNCE_CHANNEL (their Raid-Helper copy is fake; its event ID is a real sign-up elsewhere)
+function canAnnounce(raid) { return !!(RH_SERVER_ID && CF_WORKER_URL && raid.raidHelper?.eventId && (!raid.raidHelper.demo || DEMO_ANNOUNCE_CHANNEL)); }
+function announceToggleHtml(raid) {
+  const ok = canAnnounce(raid);
+  const tip = !RH_SERVER_ID ? 'Set raidhelper_server_id in config.json to announce loot'
+    : !raid.raidHelper?.eventId ? 'Link a Raid-Helper event (Edit) to announce loot in its sign-up channel'
+    : raid.raidHelper.demo ? (DEMO_ANNOUNCE_CHANNEL ? `Demo raid — posts to the test channel (${DEMO_ANNOUNCE_CHANNEL}) when the raid ends` : 'Demo raid — set demo_announce_channel in config.json to test announcing')
+    : `Post the loot and current bad luck protection to ${raid.raidHelper.event?.channelName ? '#' + raid.raidHelper.event.channelName : 'the sign-up channel'} when the raid ends`;
+  return `<label class="announce-chk ${ok ? '' : 'off'}" title="${escHtml(tip)}"><input type="checkbox" id="announceLoot" ${ok && !raid.discordPostedAt ? 'checked' : ''} ${ok ? '' : 'disabled'}> Announce loot</label>`;
+}
+
+function _dName(key, fallback) { return rosterPlayer(key)?.name || fallback || key; }
+function _dItem(ik, link) {
+  const n = itemName(ik), id = itemWowheadId(ik);
+  return link && id ? `[${n}](https://www.wowhead.com/${WOWHEAD_BRANCH}/item=${id})` : n;
+}
+function _chunkLines(lines, max = DISCORD_DESC_MAX) {
+  const out = []; let cur = '';
+  for (const ln of lines) {
+    if (cur && cur.length + ln.length + 1 > max) { out.push(cur); cur = ''; }
+    cur += (cur ? '\n' : '') + ln;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function discordSummaryEmbeds(raid) {
+  const lootLine = l => {
+    const k = lootKey(l), r = l.sr && k ? rollFor(raid, k, l.itemKey) : null;
+    return `• ${_dItem(l.itemKey, true)} → **${_dName(k, l.recipient)}**${r && r.bonus > 0 ? ` *(rolled 1-${r.max}, BLP reset)*` : ''}`;
+  };
+  const sr = raid.loot.filter(l => l.sr), ms = raid.loot.filter(l => !l.sr);
+  const lootLines = [];
+  if (sr.length) lootLines.push('**Soft reserves**', ...sr.map(lootLine));
+  if (sr.length && ms.length) lootLines.push('');
+  if (ms.length) lootLines.push('**MS > OS**', ...ms.map(lootLine));
+  if (!lootLines.length) lootLines.push('*No loot recorded.*');
+
+  // Current BLP; ▲ = went up in this raid (latest raid only)
+  const latest = !raidsData.raids.some(r => r.id !== raid.id && r.date > raid.date);
+  const rows = Object.entries(derived().blp.losses).map(([k, m]) => {
+    const items = Object.entries(m || {}).filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1] || itemName(a[0]).localeCompare(itemName(b[0])));
+    return { k, name: _dName(k), items };
+  }).filter(r => r.items.length && rosterPlayer(r.k)).sort((a, b) => a.name.localeCompare(b.name));
+  const blpLines = rows.map(r => `**${r.name}** — ` + r.items.map(([ik, n]) =>
+    `${_dItem(ik, false)} +${rollMax(n) - 100}${latest && n > blpLossesBefore(raid.id, r.k, ik) ? ' ▲' : ''}`).join(' · '));
+  if (!blpLines.length) blpLines.push('*Nobody has bad luck protection right now.*');
+  else blpLines.push('', `${latest ? '▲ went up tonight · ' : ''}each loss adds +${srRules.blp.step} to your roll on that item; winning it resets it`);
+
+  const head = `${raid.name} · ${fmtDate(raid.date)}`;
+  const embeds = [];
+  _chunkLines(lootLines).forEach((d, i) => embeds.push({ title: { text: `Loot — ${head}${i ? ' (cont.)' : ''}` }, description: d, color: '#c8a04a' }));
+  _chunkLines(blpLines).forEach((d, i) => embeds.push({ title: { text: `Bad luck protection${i ? ' (cont.)' : ''}` }, description: d, color: '#4a8fc8' }));
+  return embeds;
+}
+
+function _rhServerUrl(path) { return `${CF_WORKER_URL}/raidhelper/v4/servers/${RH_SERVER_ID}/${path}`; }
+// The Discord channel the raid's sign-up was posted in. Only the server API (via the Worker)
+// has it; the public event endpoint just gives the channel name. Cached on the raid.
+async function raidHelperChannelId(raid) {
+  const rh = raid.raidHelper; if (!rh?.eventId) return null;
+  if (rh.demo) return DEMO_ANNOUNCE_CHANNEL || null;
+  if (rh.channelId) return rh.channelId;
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(_rhServerUrl(`events?page=${page}`), { headers: { 'X-Token': writeToken } });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || 'HTTP ' + res.status);
+    const ev = (j.postedEvents || []).find(e => String(e.id) === String(rh.eventId));
+    if (ev?.channelId) return (rh.channelId = String(ev.channelId));
+    if (!j.pages || page >= j.pages) break;
+  }
+  return null;
+}
+
+async function announceRaidLoot(raid) {
+  let sent = 0;
+  try {
+    const ch = await raidHelperChannelId(raid);
+    if (!ch) throw new Error("couldn't find the Raid-Helper sign-up's channel");
+    for (const e of discordSummaryEmbeds(raid)) {
+      const res = await fetch(_rhServerUrl(`channels/${ch}/embed`), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': writeToken }, body: JSON.stringify(e) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.status === 'failed' || j.error) throw new Error(j.reason || j.error || 'HTTP ' + res.status);
+      sent++;
+    }
+    flash(`Loot announced in ${raid.raidHelper.demo ? 'the test channel' : raid.raidHelper.event?.channelName ? '#' + raid.raidHelper.event.channelName : 'Discord'}`, 'success');
+  } catch (err) {
+    flash(`Raid ended, but the Discord announcement failed${sent ? ` after ${sent} message${sent === 1 ? '' : 's'}` : ''}: ${err.message}`, 'error');
+  }
+  if (sent) { raid.discordPostedAt = new Date().toISOString(); await saveRaids().catch(() => {}); refreshAll(); }
 }
 
 
@@ -7562,6 +7670,8 @@ async function fetchData(opts = {}) {
     if (cfg.wowhead_branch) WOWHEAD_BRANCH = cfg.wowhead_branch;
     if (cfg.wowhead_data_env) WOWHEAD_DATA_ENV = +cfg.wowhead_data_env;
     if (cfg.enable_apps_script != null) ENABLE_APPS_SCRIPT = !!cfg.enable_apps_script;
+    if (cfg.raidhelper_server_id) RH_SERVER_ID = String(cfg.raidhelper_server_id).trim();
+    if (cfg.demo_announce_channel) DEMO_ANNOUNCE_CHANNEL = String(cfg.demo_announce_channel).trim();
     if (cfg.sr) console.info('config.json "sr" is ignored — SR rules now live on the SR Rules page.');
   } catch(e) {
     console.warn('config.json not found or invalid — using defaults:', e.message);
