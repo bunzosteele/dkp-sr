@@ -7,5 +7,7 @@
   "apps_script": "https://script.google.com/macros/s/AKfycbz4PHAAzCBbp7uuprvoeQKhCJGrmjT9Zgszw-EymFI-8vT-fjGgMSdfCzsF2Nt0Gk1A/exec",
   "enable_apps_script": true,
   "wowhead_branch": "classic",
-  "wowhead_data_env": 4
+  "wowhead_data_env": 4,
+  "raidhelper_server_id": "1396992953196740628",
+  "demo_announce_channel": "1557531023187906651"
 }
