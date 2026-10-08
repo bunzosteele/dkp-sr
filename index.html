@@ -1773,10 +1773,10 @@
 .prc-chip.over { color: #f08080; }
 .prc-list { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(240,176,96,0.2); font-size: 16px; }
 .prc-item { white-space: normal; }
-.end-raid-btn { background:linear-gradient(180deg,#d9b25a,#b48a32); color:#1a1206; border:1px solid #e8c878; border-radius:6px; padding:8px 18px; font-weight:800; letter-spacing:0.08em; font-size:16px; cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,0.3), 0 2px 8px rgba(200,160,74,0.25); }
-.end-raid-btn:hover { filter:brightness(1.08); }
-.announce-chk { display:inline-flex; align-items:center; gap:6px; color:var(--text); cursor:pointer; white-space:nowrap; }
-.announce-chk.off { opacity:0.5; cursor:default; }
+.end-bar { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border: 1px solid rgba(92,200,224,0.3); border-left: 3px solid var(--gold); border-radius: 6px; background: rgba(92,200,224,0.05); padding: 8px 10px; font-size: 16px; }
+.end-bar-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold); }
+.end-bar-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chk-off { opacity: 0.5; cursor: default; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -5414,7 +5414,7 @@ function renderRaidDetail(panel, raid) {
           ${raid.status === 'active' && Object.keys(raidReserves(raid)).length ? `<button class="ghost-btn" onclick="copyGargulImport('${raid.id}')" title="Paste into Gargul's soft-reserve import (/gl sr)">⧉ Gargul export</button>` : ''}
           <button class="ghost-btn" onclick="editRaidMeta('${raid.id}')">Edit</button>
           ${raid.status === 'active'
-            ? `${announceToggleHtml(raid)}<button class="end-raid-btn" onclick="endRaid('${raid.id}')">END RAID</button>`
+            ? ''
             : `<button class="ghost-btn" onclick="reopenRaid('${raid.id}')">Reopen</button>`}
           <button class="ghost-btn danger" onclick="deleteRaid('${raid.id}')">Delete</button>
         </span>
@@ -5432,6 +5432,7 @@ function renderRaidDetail(panel, raid) {
         `<b>${playerNameHtml(s.name)}</b> reserved ${e.reserved}, has ${e.reserved - e.over}`).join(' · ')}
         ${raid.status === 'active' ? '' : '<span style="opacity:0.8;"> — raid ended; the excess was forgiven (balances never go below 0).</span>'}</div>` : ''}
       ${unknown.length && writeToken && raid.status !== 'active' ? `<div class="warn-banner">Reserves from characters not on the roster: ${unknown.map(u => escHtml(u.name)).join(', ')} — they don't earn or spend SRs until matched. <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(unknown[0].name)}')">Sort them out on the Roster page →</a></div>` : ''}
+      ${raid.status === 'active' && writeToken ? endRaidBarHtml(raid) : ''}
       <div class="sub-tabs">${tabs.map(([k, l]) => `<button class="sub-tab ${sub === k ? 'on' : ''}" onclick="setRaidSub('${k}')">${l}${k === 'reserves' ? ` <span class="count">${Object.keys(raidReserves(raid)).length}</span>` : k === 'loot' ? ` <span class="count">${raid.loot.length}</span>` : ''}</button>`).join('')}</div>
     </div>
     <div id="raidSub"></div>`;
@@ -6215,13 +6216,23 @@ const DISCORD_DESC_MAX = 3800;   // Discord allows 4096 per embed description; l
 
 // Demo raids announce to DEMO_ANNOUNCE_CHANNEL (their Raid-Helper copy is fake; its event ID is a real sign-up elsewhere)
 function canAnnounce(raid) { return !!(RH_SERVER_ID && CF_WORKER_URL && raid.raidHelper?.eventId && (!raid.raidHelper.demo || DEMO_ANNOUNCE_CHANNEL)); }
+// Its own line at the bottom of an active raid's header, so ending the raid stands out
+function endRaidBarHtml(raid) {
+  const sr = raid.loot.filter(l => l.sr).length;
+  return `<div class="end-bar write-gated-hide">
+    <span class="end-bar-title">Raid in progress</span>
+    <span class="iv-dim">${raid.loot.length} item${raid.loot.length === 1 ? '' : 's'} logged${raid.loot.length ? ` · ${sr} SR` : ''}</span>
+    <span class="end-bar-actions">${announceToggleHtml(raid)}<button class="small-gold-btn" onclick="endRaid('${raid.id}')">END RAID</button></span>
+  </div>`;
+}
 function announceToggleHtml(raid) {
   const ok = canAnnounce(raid);
   const tip = !RH_SERVER_ID ? 'Set raidhelper_server_id in config.json to announce loot'
     : !raid.raidHelper?.eventId ? 'Link a Raid-Helper event (Edit) to announce loot in its sign-up channel'
     : raid.raidHelper.demo ? (DEMO_ANNOUNCE_CHANNEL ? `Demo raid — posts to the test channel (${DEMO_ANNOUNCE_CHANNEL}) when the raid ends` : 'Demo raid — set demo_announce_channel in config.json to test announcing')
     : `Post the loot and current bad luck protection to ${raid.raidHelper.event?.channelName ? '#' + raid.raidHelper.event.channelName : 'the sign-up channel'} when the raid ends`;
-  return `<label class="announce-chk ${ok ? '' : 'off'}" title="${escHtml(tip)}"><input type="checkbox" id="announceLoot" ${ok && !raid.discordPostedAt ? 'checked' : ''} ${ok ? '' : 'disabled'}> Announce loot</label>`;
+  const where = raid.raidHelper?.demo ? ' (test channel)' : raid.raidHelper?.event?.channelName ? ` in #${escHtml(raid.raidHelper.event.channelName)}` : '';
+  return `<label class="chk ${ok ? '' : 'chk-off'}" title="${escHtml(tip)}"><input type="checkbox" id="announceLoot" ${ok && !raid.discordPostedAt ? 'checked' : ''} ${ok ? '' : 'disabled'}> Announce loot${ok ? where : ''}</label>`;
 }
 
 function _dName(key, fallback) { return rosterPlayer(key)?.name || fallback || key; }
@@ -6261,7 +6272,6 @@ function discordSummaryEmbeds(raid) {
   const blpLines = rows.map(r => `**${r.name}** — ` + r.items.map(([ik, n]) =>
     `${_dItem(ik, false)} +${rollMax(n) - 100}${latest && n > blpLossesBefore(raid.id, r.k, ik) ? ' ▲' : ''}`).join(' · '));
   if (!blpLines.length) blpLines.push('*Nobody has bad luck protection right now.*');
-  else blpLines.push('', `${latest ? '▲ went up tonight · ' : ''}each loss adds +${srRules.blp.step} to your roll on that item; winning it resets it`);
 
   const head = `${raid.name} · ${fmtDate(raid.date)}`;
   const embeds = [];
