@@ -1815,6 +1815,13 @@
 .cr-chips { margin-bottom: 6px; }
 .cr-add, .cr-copy { max-width: 100%; }
 .cr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.dot-link { cursor: pointer; }
+.dot-link:hover { transform: scale(1.35); box-shadow: 0 0 0 2px rgba(92,200,224,0.45); }
+span.dot-link:hover { box-shadow: none; text-shadow: 0 0 6px rgba(92,200,224,0.8); }
+.cons-table tr.cons-focus td { background: rgba(92,200,224,0.10); }
+.cons-table tr.cons-focus td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+.cons-ovr { width: 64px; padding: 3px 6px; text-align: center; }
+.cons-score .x-btn { vertical-align: middle; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -4181,13 +4188,16 @@ function buffColor(pct) {
   if (pct >= t - 25) return C4;
   return C5;
 }
+// Officers: clicking a dot opens that raid's Consumes tab on this raider
 function buffDotHtml(playerName, date, label) {
   const v = rawBuffScoresByDate(playerName)[date];
-  if (v === undefined) return `<div class="raid-dot present" title="${label}: Present"></div>`;
+  const link = writeToken ? ` dot-link" onclick="event.stopPropagation();openRaidConsumes('${date}','${jsAttr(normalizeName(playerName))}')` : '';
+  const more = writeToken ? ' (click for their consumables)' : '';
+  if (v === undefined) return `<div class="raid-dot present${link}" title="${label}: Present${more}"></div>`;
   const pct = Math.round(v), col = buffColor(pct);
-  const tip = `${label}: Present | Consumes ${pct}%${srRules.buff.enabled ? (pct >= srRules.buff.threshold ? ' — earned the buff SR' : ` — below ${srRules.buff.threshold}%`) : ''}`;
-  if (pct >= 100) return `<span class="raid-star" style="color:${C1};" title="${tip}">★</span>`;
-  return `<div class="raid-dot present" style="background:${col};border-color:${col};" title="${tip}"></div>`;
+  const tip = `${label}: Present | Consumes ${pct}%${srRules.buff.enabled ? (pct >= srRules.buff.threshold ? ' — earned the consumes SR' : ` — below ${srRules.buff.threshold}%`) : ''}${more}`;
+  if (pct >= 100) return `<span class="raid-star${link}" style="color:${C1};" title="${tip}">★</span>`;
+  return `<div class="raid-dot present${link}" style="background:${col};border-color:${col};" title="${tip}"></div>`;
 }
 
 function consumeAvg(playerName) {
@@ -6358,7 +6368,8 @@ async function rdRemoveAlias(playerKey, i) {
 // consume-rules.json = { combos: { 'Warrior|Tanks': { groups: [{ id, name, ids: [abilityId|'we:…'] }] } } }
 // A group is met on a boss fight when the raider had ANY of its buffs during that fight.
 // Score = average over the combo's groups of "% of the raider's boss kills where the group was met"
-// (all of their boss fights if the night had no kills). No rules for the combo → no score.
+// (all of their boss fights if the night had no kills). No rules for the combo → 100%.
+// Officers can overwrite a raider's final score per raid: raid.consumeOverrides = { key: pct }.
 // ═════════════════════════════════════════════════════════════════════════════
 
 let consumeRules = { combos: {} };
@@ -6399,13 +6410,14 @@ function _killMask(raid) {
   let m = 0; f.forEach((x, i) => { if (x.kill) m += 2 ** i; });
   return m || (2 ** f.length - 1);
 }
-// { pct, groups: [{ name, pct }] } — or null (no log for them, or no rules for their class + role)
+// { pct, groups: [{ name, pct }], noRules?, manual?, auto? } — or null when they aren't in the log
 function consumeScore(raid, key) {
   const mk = 'cs|' + raid.id + '|' + key;
   if (_consMemo.has(mk)) return _consMemo.get(mk);
   let res = null;
   const p = raidWclPlayer(raid, key), groups = consumeGroupsFor(key).filter(g => g.ids?.length);
-  if (p && groups.length) {
+  if (p && !groups.length) res = { pct: 100, groups: [], noRules: true };
+  else if (p) {
     const denom = _and(p.f, _killMask(raid)) || p.f, n = _bits(denom);
     if (n) {
       const gs = groups.map(g => {
@@ -6413,10 +6425,24 @@ function consumeScore(raid, key) {
         return { name: g.name, pct: Math.round(100 * _bits(_and(m, denom)) / n) };
       });
       res = { pct: Math.round(gs.reduce((a, g) => a + g.pct, 0) / gs.length), groups: gs, fights: n };
-    }
+    } else res = { pct: 100, groups: [], noBoss: true }; // in the log but no boss fights: nothing to hold them to
   }
+  const ov = raid.consumeOverrides?.[key];
+  if (p && ov !== undefined && ov !== null) res = { ...res, auto: res?.pct ?? null, pct: ov, manual: true };
   _consMemo.set(mk, res);
   return res;
+}
+// Officers: overwrite (or clear, with '') a raider's consumes score for one raid
+let _consEdit = null;
+function editConsumeScore(raidId, key) { _consEdit = key; renderRaidsPanel(); setTimeout(() => document.getElementById('consOvr')?.focus(), 0); }
+async function setConsumeScore(raidId, key, value) {
+  const raid = getRaid(raidId); _consEdit = null;
+  const v = String(value ?? '').trim();
+  if (v === '') { if (raid.consumeOverrides) delete raid.consumeOverrides[key]; }
+  else { const n = Math.round(+v); if (!Number.isFinite(n) || n < 0 || n > 100) { flash('Enter a score from 0 to 100', 'error'); renderRaidsPanel(); return; }
+    (raid.consumeOverrides ||= {})[key] = n; }
+  await saveRaids().catch(() => {});
+  refreshAll();
 }
 // { date: pct } for the overview dots and averages
 function rawBuffScoresByDate(playerName) {
@@ -6528,6 +6554,15 @@ function wclLineHtml(raid) {
 }
 
 // ── Raid → Consumes tab (officers) ──
+// From an overview dot: open the raid's Consumes tab and highlight that raider
+function openRaidConsumes(date, key) {
+  const raid = getRaid(date); if (!raid) return;
+  openRaid(raid.id, 'consumes');
+  _raidView.focus = key;
+  renderRaidsPanel();
+  const row = document.querySelector(`.cons-table tr[data-key="${key}"]`);
+  if (row) setTimeout(() => row.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+}
 function renderRaidConsumes(el, raid) {
   const w = raid.wcl, cat = { wcl: { abilities: consumableCatalog() } };
   const override = `<div class="cons-src write-gated-hide">
@@ -6545,20 +6580,30 @@ function renderRaidConsumes(el, raid) {
     .map(x => ({ ...x, score: x.rp ? consumeScore(raid, x.key) : null }))
     .sort((a, b) => (!!b.rp - !!a.rp) || ((a.score?.pct ?? 101) - (b.score?.pct ?? 101)) || a.p.name.localeCompare(b.p.name));
   const pctCls = v => v >= srRules.buff.threshold ? 'ok' : v >= srRules.buff.threshold - 25 ? 'mid' : 'low';
+  const scoreCell = (key, rp, score) => {
+    if (!rp || !score) return '<span class="iv-dim">—</span>';
+    if (_consEdit === key) return `<input id="consOvr" type="number" min="0" max="100" class="gl-input cons-ovr" value="${score.pct}"
+        onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){_consEdit=null;renderRaidsPanel();}" onblur="setConsumeScore('${raid.id}','${key}',this.value)"><span class="iv-dim">%</span>`;
+    return `<b class="cons-pct ${pctCls(score.pct)}">${score.pct}%</b>
+      <button class="x-btn write-gated-hide" onclick="editConsumeScore('${raid.id}','${key}')" title="Overwrite this score">✎</button>
+      ${score.manual ? `<div class="cons-sub iv-dim">set by hand${score.auto != null ? ` · was ${score.auto}%` : ''} <button class="x-btn" onclick="setConsumeScore('${raid.id}','${key}','')" title="Back to the calculated score">↺</button></div>` : ''}`;
+  };
   const row = ({ p, key, rp, score }) => {
     const mine = rp ? ruleIds(key) : new Set();
     const det = Object.keys(p.b).filter(id => id !== WCL_WE_ANY || !Object.keys(p.b).some(x => x.startsWith('we:') && x !== WCL_WE_ANY))
       .map(id => ({ id, pct: wclBuffPct(p, id) })).sort((a, b) => mine.has(b.id) - mine.has(a.id) || b.pct - a.pct);
-    return `<tr class="${rp ? '' : 'cons-unknown'}">
+    return `<tr class="${rp ? '' : 'cons-unknown'}${key && key === _raidView.focus ? ' cons-focus' : ''}" data-key="${escHtml(key || '')}">
       <td>${rp ? playerNameHtml(rp.name) : `${escHtml(p.name)} <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(p.name)}')">not on roster</a>`}<div class="iv-dim cons-sub">${escHtml(rp ? `${rp.class} · ${rp.role}` : p.cls)} · ${_bits(p.f)} boss fight${_bits(p.f) === 1 ? '' : 's'}</div></td>
-      <td class="cons-score">${score ? `<b class="cons-pct ${pctCls(score.pct)}">${score.pct}%</b>` : `<span class="iv-dim" title="${rp ? 'No consumable rules for ' + escHtml(rp.class + ' · ' + rp.role) : ''}">—</span>`}</td>
-      <td>${score ? score.groups.map(g => `<span class="cons-grp ${pctCls(g.pct)}">${escHtml(g.name)} ${g.pct}%</span>`).join('') : rp ? `<a class="subtle-link" onclick="openConsumeRules('${jsAttr(comboKey(rp.class, rp.role))}')">set rules for ${escHtml(rp.class)} · ${escHtml(rp.role)}</a>` : ''}</td>
+      <td class="cons-score">${scoreCell(key, rp, score)}</td>
+      <td>${score?.groups.length ? score.groups.map(g => `<span class="cons-grp ${pctCls(g.pct)}">${escHtml(g.name)} ${g.pct}%</span>`).join('')
+        : rp && score?.noRules ? `<span class="iv-dim">no requirements · </span><a class="subtle-link" onclick="openConsumeRules('${jsAttr(comboKey(rp.class, rp.role))}')">set rules for ${escHtml(rp.class)} · ${escHtml(rp.role)}</a>`
+        : score?.noBoss ? '<span class="iv-dim">no boss fights</span>' : ''}</td>
       <td class="cons-det">${det.map(d => `<span class="cons-chip${mine.has(d.id) ? ' req' : ''}" title="${escHtml(String(d.id))}">${escHtml(wclAbilityName(d.id, cat))} <b>${d.pct}%</b></span>`).join('') || '<span class="iv-dim">nothing detected</span>'}</td>
     </tr>`;
   };
   el.innerHTML = `
     <div class="cons-head">
-      <span>Score = average of the raider's consumable groups, each the % of their boss kills where they had at least one item from the group${kills ? '' : ' (no kills this night, so every boss pull counts)'}. At or above <b>${srRules.buff.threshold}%</b> earns the consumes bonus${srRules.buff.enabled ? '' : ' (turned off in SR Rules)'}.</span>
+      <span>Score = average of the raider's consumable groups, each the % of their boss kills where they had at least one item from the group${kills ? '' : ' (no kills this night, so every boss pull counts)'}; 100% when their class and role has no requirements. ✎ overwrites a score for this raid. At or above <b>${srRules.buff.threshold}%</b> earns the consumes bonus${srRules.buff.enabled ? '' : ' (turned off in SR Rules)'}.</span>
       <a class="subtle-link" onclick="openConsumeRules()">Consumable Rules →</a>
     </div>
     <div class="cons-note iv-dim">Detected: % of their boss fights with that buff at any point. A buff taken before logging started and still running when it ended leaves no trace in the log — start logging before people buff.</div>
@@ -6587,7 +6632,7 @@ function renderConsumesPanel() {
         <optgroup label="Seen in other logs">${[[WCL_WE_ANY, nm(WCL_WE_ANY)], ...others].map(([id, n]) => `<option value="${escHtml(id)}">${escHtml(n)}</option>`).join('')}</optgroup></select>`;
     return `<details class="cr-combo" ${_crOpen === ck ? 'open' : ''} data-combo="${escHtml(ck)}" ontoggle="if(this.open)_crOpen=this.dataset.combo">
       <summary><span class="rh-arrow">▸</span><b style="color:${CLASS_COLORS[cls] || 'var(--text)'};">${escHtml(cls)}</b> <span class="iv-dim">· ${escHtml(role)}</span>
-        <span class="cr-sum">${c.groups.length ? c.groups.map(g => escHtml(g.name)).join(' · ') : '<i>no requirements — no consumes score</i>'}</span>
+        <span class="cr-sum">${c.groups.length ? c.groups.map(g => escHtml(g.name)).join(' · ') : '<i>no requirements — everyone scores 100%</i>'}</span>
         <span class="iv-dim cr-n">${(raiders[ck] || []).length} raider${(raiders[ck] || []).length === 1 ? '' : 's'}</span></summary>
       <div class="cr-body">
         ${c.groups.map((g, gi) => `<div class="cr-group">
@@ -6603,7 +6648,7 @@ function renderConsumesPanel() {
   panel.innerHTML = `<div class="rules">
     <div class="section-title">Consumable Rules</div>
     <p class="rules-intro">Requirements per class and role, checked against Warcraft Logs. Each group is met on a boss kill when the raider had <b>at least one</b> of its consumables;
-      their consumes score is the average of their groups. The SR bonus threshold is on the <a class="subtle-link" onclick="setGrouping('rules')">SR Rules</a> page (${srRules.buff.enabled ? `${srRules.buff.threshold}%` : 'off'}).
+      their consumes score is the average of their groups. A class and role with no requirements scores 100%. The SR bonus threshold is on the <a class="subtle-link" onclick="setGrouping('rules')">SR Rules</a> page (${srRules.buff.enabled ? `${srRules.buff.threshold}%` : 'off'}).
       Changes apply to every raid, past ones included.</p>
     ${combos.map(comboHtml).join('') || '<div class="gl-empty">No raiders on the roster yet.</div>'}
     <div style="display:flex;gap:8px;margin-top:18px;" class="write-gated-hide">
@@ -7121,7 +7166,7 @@ const DEMO_CONSUME_PROFILES = {
   'Druid|Physical DPS':   [[17538, .8, .85], [18192, .6, .85], [17038, .4, .8], [5665, .3, .7]],
 };
 // Example Consumable Rules, based on what each class + role used in that log. Some combos are
-// left without rules on purpose, so the "no rules → no consumes score" state is visible too.
+// left without rules on purpose, so the "no rules → 100%" state is visible too.
 const DEMO_CONSUME_RULES = { combos: {
   'Warrior|Tanks': { groups: [{ id: 'g1', name: 'Defensive elixir or flask', ids: [3593, 11348, 11371, 3223, 17626] }, { id: 'g2', name: 'Food', ids: [24799, 25661, 18125] }, { id: 'g3', name: 'Sharpening stone', ids: ['we:any'] }] },
   'Warrior|Physical DPS': { groups: [{ id: 'g1', name: 'Mongoose or Giants', ids: [17538, 11405] }, { id: 'g2', name: 'Food or firewater', ids: [17038, 18125, 24799] }, { id: 'g3', name: 'Sharpening stone', ids: ['we:any'] }] },
@@ -7244,6 +7289,7 @@ async function applyDemoFixture(fx) {
 
 async function generateDemoData({ overwrite = false } = {}) {
   if (!writeToken) { console.error('Save the write token first.'); return; }
+  if (!CF_WORKER_URL) { console.error('cf_worker_url is not set — config.json is missing or unreadable (see the warning above). Nothing was written.'); return; }
   if ((rosterData.players.length || raidsData.raids.length) && !overwrite) {
     console.error('There is already data here. Use generateDemoData({ overwrite: true }) to replace it (or wipeAllData first).'); return;
   }
@@ -7300,7 +7346,13 @@ async function fetchData(opts = {}) {
 
 (async () => {
   try {
-    const cfg = await fetch('./config.json?t=' + Date.now()).then(r => r.json());
+    const raw = await fetch('./config.json?t=' + Date.now()).then(r => r.text());
+    let cfg;
+    try { cfg = JSON.parse(raw); }
+    catch (e) { // forgive the classic hand-edit slip: a comma before } or ]
+      cfg = JSON.parse(raw.replace(/,(\s*[}\]])/g, '$1'));
+      addError('config.json', 'config.json has a stray comma (' + e.message + ') — it was read anyway, but please fix the file.');
+    }
     if (cfg.cf_worker_url)  CF_WORKER_URL  = cfg.cf_worker_url.trim().replace(/\/+$/, '');
     if (cfg.kv_prefix != null) KV_PREFIX   = String(cfg.kv_prefix);
     if (cfg.cors_api_key)   CORS_API_KEY   = cfg.cors_api_key.trim();
