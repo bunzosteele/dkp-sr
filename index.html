@@ -1822,6 +1822,10 @@ span.dot-link:hover { box-shadow: none; text-shadow: 0 0 6px rgba(92,200,224,0.8
 .cons-table tr.cons-focus td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
 .cons-ovr { width: 64px; padding: 3px 6px; text-align: center; }
 .cons-score .x-btn { vertical-align: middle; }
+.cons-table tr.cons-role td { padding: 14px 8px 6px; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold); border-bottom: 1px solid rgba(92,200,224,0.35); background: none; }
+.cons-table tr.cons-role:first-child td { padding-top: 4px; }
+.cr-role { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold); margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(92,200,224,0.35); }
+.cons-nr { font-size: 15px; }
 
 </style>
 <script>const whTooltips = {colorLinks: true, iconizeLinks: false, iconSize: 'small', rename: true, hide: {molt: true}};</script>
@@ -6578,7 +6582,10 @@ function renderRaidConsumes(el, raid) {
   const ruleIds = id => new Set(consumeGroupsFor(id).flatMap(g => g.ids.map(String)));
   const rows = Object.values(w.players).map(p => ({ p, key: resolveRosterKey(p.name) })).map(x => ({ ...x, rp: x.key && rosterPlayer(x.key) }))
     .map(x => ({ ...x, score: x.rp ? consumeScore(raid, x.key) : null }))
-    .sort((a, b) => (!!b.rp - !!a.rp) || ((a.score?.pct ?? 101) - (b.score?.pct ?? 101)) || a.p.name.localeCompare(b.p.name));
+    .sort((a, b) => (a.rp?.class || '~').localeCompare(b.rp?.class || '~') || (a.rp?.name || a.p.name).localeCompare(b.rp?.name || b.p.name));
+  // Grouped by role (a divider row each), class then name within; names not on the roster last
+  const roleOf = x => x.rp ? (ROLE_ORDER.includes(x.rp.role) ? x.rp.role : 'Other') : 'Not on roster';
+  const sections = [...ROLE_ORDER, 'Other', 'Not on roster'].map(role => [role, rows.filter(x => roleOf(x) === role)]).filter(([, l]) => l.length);
   const pctCls = v => v >= srRules.buff.threshold ? 'ok' : v >= srRules.buff.threshold - 25 ? 'mid' : 'low';
   const scoreCell = (key, rp, score) => {
     if (!rp || !score) return '<span class="iv-dim">—</span>';
@@ -6593,10 +6600,10 @@ function renderRaidConsumes(el, raid) {
     const det = Object.keys(p.b).filter(id => id !== WCL_WE_ANY || !Object.keys(p.b).some(x => x.startsWith('we:') && x !== WCL_WE_ANY))
       .map(id => ({ id, pct: wclBuffPct(p, id) })).sort((a, b) => mine.has(b.id) - mine.has(a.id) || b.pct - a.pct);
     return `<tr class="${rp ? '' : 'cons-unknown'}${key && key === _raidView.focus ? ' cons-focus' : ''}" data-key="${escHtml(key || '')}">
-      <td>${rp ? playerNameHtml(rp.name) : `${escHtml(p.name)} <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(p.name)}')">not on roster</a>`}<div class="iv-dim cons-sub">${escHtml(rp ? `${rp.class} · ${rp.role}` : p.cls)} · ${_bits(p.f)} boss fight${_bits(p.f) === 1 ? '' : 's'}</div></td>
+      <td>${rp ? playerNameHtml(rp.name) : `${escHtml(p.name)} <a class="subtle-link" onclick="openRaidersInbox('${jsAttr(p.name)}')">not on roster</a>`}<div class="iv-dim cons-sub">${escHtml(rp ? rp.class : p.cls)} · ${_bits(p.f)} boss fight${_bits(p.f) === 1 ? '' : 's'}</div></td>
       <td class="cons-score">${scoreCell(key, rp, score)}</td>
       <td>${score?.groups.length ? score.groups.map(g => `<span class="cons-grp ${pctCls(g.pct)}">${escHtml(g.name)} ${g.pct}%</span>`).join('')
-        : rp && score?.noRules ? `<span class="iv-dim">no requirements · </span><a class="subtle-link" onclick="openConsumeRules('${jsAttr(comboKey(rp.class, rp.role))}')">set rules for ${escHtml(rp.class)} · ${escHtml(rp.role)}</a>`
+        : rp && score?.noRules ? `<span class="iv-dim cons-nr">no requirements · </span><a class="subtle-link cons-nr" onclick="openConsumeRules('${jsAttr(comboKey(rp.class, rp.role))}')">set rules for ${escHtml(rp.class)} · ${escHtml(rp.role)}</a>`
         : score?.noBoss ? '<span class="iv-dim">no boss fights</span>' : ''}</td>
       <td class="cons-det">${det.map(d => `<span class="cons-chip${mine.has(d.id) ? ' req' : ''}" title="${escHtml(String(d.id))}">${escHtml(wclAbilityName(d.id, cat))} <b>${d.pct}%</b></span>`).join('') || '<span class="iv-dim">nothing detected</span>'}</td>
     </tr>`;
@@ -6608,7 +6615,7 @@ function renderRaidConsumes(el, raid) {
     </div>
     <div class="cons-note iv-dim">Detected: % of their boss fights with that buff at any point. A buff taken before logging started and still running when it ended leaves no trace in the log — start logging before people buff.</div>
     <div style="overflow-x:auto;"><table class="mini-table cons-table"><thead><tr><th>Raider</th><th>Score</th><th>Groups</th><th>Detected</th></tr></thead>
-      <tbody>${rows.map(row).join('')}</tbody></table></div>
+      <tbody>${sections.map(([role, list]) => `<tr class="cons-role"><td colspan="4">${escHtml(role)} <span class="iv-dim">${list.length}</span></td></tr>${list.map(row).join('')}`).join('')}</tbody></table></div>
     ${w.demo ? '' : override}`;
 }
 
@@ -6650,7 +6657,10 @@ function renderConsumesPanel() {
     <p class="rules-intro">Requirements per class and role, checked against Warcraft Logs. Each group is met on a boss kill when the raider had <b>at least one</b> of its consumables;
       their consumes score is the average of their groups. A class and role with no requirements scores 100%. The SR bonus threshold is on the <a class="subtle-link" onclick="setGrouping('rules')">SR Rules</a> page (${srRules.buff.enabled ? `${srRules.buff.threshold}%` : 'off'}).
       Changes apply to every raid, past ones included.</p>
-    ${combos.map(comboHtml).join('') || '<div class="gl-empty">No raiders on the roster yet.</div>'}
+    ${[...ROLE_ORDER, ...new Set(combos.map(c => c.split('|')[1]).filter(r => !ROLE_ORDER.includes(r)))].map(role => {
+      const list = combos.filter(c => c.split('|')[1] === role).sort();
+      return list.length ? `<div class="cr-role">${escHtml(role)}</div>${list.map(comboHtml).join('')}` : '';
+    }).join('') || '<div class="gl-empty">No raiders on the roster yet.</div>'}
     <div style="display:flex;gap:8px;margin-top:18px;" class="write-gated-hide">
       <button id="crSave" class="gloss-btn-saveable small-gold-btn" onclick="crSave()">SAVE RULES</button>
       <button class="ghost-btn" onclick="_crDraft=null;renderConsumesPanel()">Discard changes</button>
