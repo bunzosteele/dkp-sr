@@ -9,5 +9,9 @@
   "wowhead_branch": "classic",
   "wowhead_data_env": 4,
   "raidhelper_server_id": "1396992953196740628",
-  "demo_announce_channel": "1557531023187906651"
+  "demo_announce_channel": "1557531023187906651",
+  "wcl_site": "fresh",
+  "wcl_guild_name": "Dont Be Suspicious",
+  "wcl_guild_server": "dreamscythe",
+  "wcl_guild_region": "us",
 }
